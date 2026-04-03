@@ -36,7 +36,10 @@ def build_diagnostics_snapshot(
     from app.services.market_time import latest_or_previous_trading_day
 
     from app.services.decision_bundle import get_or_build_decision_state
+    from app.services.goal_alignment import build_goal_alignment_summary
 
+    universe_status = universe['status'].__dict__
+    decision_state = get_or_build_decision_state(settings, db, alpaca)
     return {
         'app_env': settings.app_env,
         'trading_mode': settings.trading_mode,
@@ -45,12 +48,13 @@ def build_diagnostics_snapshot(
         'data_api': data_ping,
         'account_status': account_status,
         'latest_scan': latest_scan,
-        'universe_status': universe['status'].__dict__,
+        'universe_status': universe_status,
         'config': settings.public_snapshot(),
         'contract_health': build_contract_health(db),
         'scheduler_status': scheduler_status or {'leader': False, 'scheduler_running': False, 'mode': 'unknown'},
         'live_trust': build_live_trust_snapshot(settings, db),
-        'decision_state': get_or_build_decision_state(settings, db, alpaca),
+        'decision_state': decision_state,
+        'goal_alignment': build_goal_alignment_summary(settings, universe_status=universe_status, decision_state=decision_state),
     }
 
 

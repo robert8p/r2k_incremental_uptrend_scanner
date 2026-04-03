@@ -116,6 +116,25 @@ def register_admin_routes(
             snapshot.get('universe_status', {}),
         )
 
+    @app.get('/diagnostics/goal-alignment.txt')
+    def diagnostics_goal_alignment_snapshot() -> Response:
+        from app.services.diagnostics import build_diagnostics_snapshot
+        from app.services.goal_alignment import build_goal_alignment_text
+
+        snapshot = build_diagnostics_snapshot(
+            runtime.settings,
+            runtime.db,
+            runtime.alpaca,
+            scheduler_status=runtime.scheduler_status,
+        )
+        summary = snapshot.get('goal_alignment', {})
+        content = build_goal_alignment_text(summary)
+        return Response(
+            content=content,
+            media_type='text/plain; charset=utf-8',
+            headers={'Content-Disposition': 'attachment; filename=goal_alignment.txt'},
+        )
+
 
     @app.get('/diagnostics/live-confirmation-pack.zip')
     def diagnostics_live_confirmation_pack() -> Response:

@@ -12,6 +12,7 @@ from app.db import Database
 from app.repositories import RepositoryBundle, ensure_repository_bundle
 from app.services.checkpoint_decision_surface import build_checkpoint_decision_pack, build_checkpoint_decision_surface
 from app.services.evidence_pack import pack_to_zip_bytes
+from app.services.goal_alignment import build_goal_alignment_summary, build_goal_alignment_text
 from app.services.live_trust import build_live_trust_snapshot
 from app.services.shadow_promotion_pack import build_shadow_promotion_pack
 from app.version import VERSION
@@ -238,6 +239,12 @@ def build_decision_bundle_pack(
     decision_state = build_decision_state(settings, repos, alpaca, days=days, offsets=requested_offsets)
     backfill = dict(decision_state.get('historical_shadow_backfill') or {})
     checkpoint_summary = dict(decision_state.get('checkpoint_summary') or {})
+    try:
+        from app.services.universe import load_universe
+        universe_status = load_universe(settings, repos.db, force_refresh=False)['status']
+    except Exception:
+        universe_status = {}
+    goal_alignment = build_goal_alignment_summary(settings, universe_status=universe_status, decision_state=decision_state)
 
     report_lines = [
         '# Decision bundle',
@@ -277,6 +284,8 @@ def build_decision_bundle_pack(
     pack = {
         'MANIFEST.json': json.dumps(manifest, indent=2).encode('utf-8'),
         'decision_state_summary.json': json.dumps(decision_state, indent=2).encode('utf-8'),
+        'goal_alignment_summary.json': json.dumps(goal_alignment, indent=2).encode('utf-8'),
+        'goal_alignment.txt': build_goal_alignment_text(goal_alignment).encode('utf-8'),
         'historical_shadow_backfill_summary.json': json.dumps(backfill, indent=2).encode('utf-8'),
         'checkpoint_decision_summary.json': json.dumps(checkpoint_summary, indent=2).encode('utf-8'),
         'historical_shadow_daily_rollup.csv': shadow_pack.get('overstrictness_shadow_daily_rollup.csv', b''),

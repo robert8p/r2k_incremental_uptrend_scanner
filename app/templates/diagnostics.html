@@ -24,6 +24,7 @@
                     <a class="button-link action-button" href="/scan/recent/export.zip?days=5&offsets=120,150">Last 5 sessions · 120/150 scans</a>
                     <a class="button-link action-button" href="/diagnostics/live-confirmation-pack.zip{{ token_suffix }}">Live confirmation pack</a>
                     <a class="button-link action-button" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Decision bundle</a>
+                    <a class="button-link action-button" href="/diagnostics/goal-alignment.txt{{ token_suffix }}">Goal alignment .txt</a>
                     <a class="button-link action-button" href="/diagnostics/stage2-sanity-pack.zip{{ token_suffix }}">Stage-2 sanity pack</a>
                     <a class="button-link action-button" href="/diagnostics/stage2-regression-pack.zip{{ token_suffix }}">Stage-2 regression pack</a>
                     <a class="button-link action-button" href="/diagnostics/checkpoint-decision-pack.zip{{ token_suffix }}">Checkpoint decision pack</a>
@@ -64,6 +65,48 @@
         <div><span class="label">Regressed later</span><strong>{{ snapshot.decision_state.regressed_after_earlier_validity_count }}</strong></div>
     </div>
     <p class="muted small">{{ snapshot.decision_state.decision_recommendation_message }}</p>
+</section>
+{% endif %}
+{% if snapshot.goal_alignment %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Goal alignment readout</h2>
+            <p class="muted">One-screen explanation of what matters now, what stays frozen, and what would justify a real change.</p>
+        </div>
+        <a class="button-link secondary-button action-button action-button--inline" href="/diagnostics/goal-alignment.txt{{ token_suffix }}">Download goal alignment .txt</a>
+    </div>
+    <div class="goal-alignment-intro">
+        <div class="goal-alignment-lead">
+            <span class="label">Operating posture</span>
+            <strong>{{ snapshot.goal_alignment.operating_posture }}</strong>
+        </div>
+        <div class="goal-alignment-lead">
+            <span class="label">Overall assessment</span>
+            <strong>{{ snapshot.goal_alignment.overall_assessment }}</strong>
+        </div>
+    </div>
+    <p class="muted small">{{ snapshot.goal_alignment.likely_future_pressure_point }}</p>
+    <div class="grid three goal-alignment-grid">
+        <div class="card inset-card">
+            <h3>What matters now</h3>
+            <ul class="goal-list">
+                {% for item in snapshot.goal_alignment.what_matters_now %}<li>{{ item }}</li>{% endfor %}
+            </ul>
+        </div>
+        <div class="card inset-card">
+            <h3>What is frozen</h3>
+            <ul class="goal-list">
+                {% for item in snapshot.goal_alignment.what_is_frozen %}<li>{{ item }}</li>{% endfor %}
+            </ul>
+        </div>
+        <div class="card inset-card">
+            <h3>What would justify change</h3>
+            <ul class="goal-list">
+                {% for item in snapshot.goal_alignment.what_would_justify_change %}<li>{{ item }}</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
 </section>
 {% endif %}
 

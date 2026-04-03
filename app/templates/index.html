@@ -231,6 +231,48 @@
     <p class="muted small">{{ decision_state.decision_recommendation_message }}</p>
 </section>
 {% endif %}
+{% if goal_alignment %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Goal alignment readout</h2>
+            <p class="muted">What matters now, what stays frozen, and what would justify a real change.</p>
+        </div>
+        <a class="button-link secondary-button" href="/diagnostics/goal-alignment.txt{{ token_suffix }}">Download goal alignment .txt</a>
+    </div>
+    <div class="goal-alignment-intro">
+        <div class="goal-alignment-lead">
+            <span class="label">Operating posture</span>
+            <strong>{{ goal_alignment.operating_posture }}</strong>
+        </div>
+        <div class="goal-alignment-lead">
+            <span class="label">Overall assessment</span>
+            <strong>{{ goal_alignment.overall_assessment }}</strong>
+        </div>
+    </div>
+    <p class="muted small">{{ goal_alignment.likely_future_pressure_point }}</p>
+    <div class="grid three goal-alignment-grid">
+        <div class="card inset-card">
+            <h3>What matters now</h3>
+            <ul class="goal-list">
+                {% for item in goal_alignment.what_matters_now %}<li>{{ item }}</li>{% endfor %}
+            </ul>
+        </div>
+        <div class="card inset-card">
+            <h3>What is frozen</h3>
+            <ul class="goal-list">
+                {% for item in goal_alignment.what_is_frozen %}<li>{{ item }}</li>{% endfor %}
+            </ul>
+        </div>
+        <div class="card inset-card">
+            <h3>What would justify change</h3>
+            <ul class="goal-list">
+                {% for item in goal_alignment.what_would_justify_change %}<li>{{ item }}</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+</section>
+{% endif %}
 
 {% if latest_scan %}
 <section class="card">
