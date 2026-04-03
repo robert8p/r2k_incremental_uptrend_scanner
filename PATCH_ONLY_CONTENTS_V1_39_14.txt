@@ -1,0 +1,13 @@
+app/services/historical_replay_shadow_pack.py
+app/services/backtest.py
+app/services/decision_bundle.py
+app/services/goal_alignment.py
+app/routes/admin_routes.py
+app/templates/diagnostics.html
+app/templates/index.html
+app/version.py
+PATCH_NOTES_V1_39_14_HISTORICAL_REPLAY_PRIMARY_EVIDENCE.md
+tests/test_historical_replay_shadow_pack.py
+tests/test_decision_bundle.py
+tests/test_goal_alignment.py
+tests/test_diagnostics_ui_and_snapshot_downloads.py

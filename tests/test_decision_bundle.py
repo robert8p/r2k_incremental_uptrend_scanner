@@ -86,6 +86,8 @@ def test_build_decision_bundle_pack_includes_backfill_and_decision_state(monkeyp
     monkeypatch.setattr('app.services.decision_bundle.build_checkpoint_decision_pack', lambda *args, **kwargs: checkpoint_pack)
     monkeypatch.setattr('app.services.decision_bundle.build_checkpoint_decision_surface', lambda *args, **kwargs: checkpoint_surface)
     monkeypatch.setattr('app.services.decision_bundle.build_live_trust_snapshot', lambda *args, **kwargs: {'latest_research_run_id': 42})
+    monkeypatch.setattr('app.services.decision_bundle.read_cached_historical_replay_summary', lambda settings: {'overall_verdict': 'historical_replay_supports_candidate_profile', 'recommended_profile': {'profile_name': 'soft_bounce_quality'}, 'trading_day_count': 60})
+    monkeypatch.setattr('app.services.decision_bundle.read_cached_historical_replay_zip', lambda settings: None)
 
     pack = build_decision_bundle_pack(settings, object(), DummyAlpaca(), days=60, offsets=[120, 150])
     summary = json.loads(pack['decision_state_summary.json'])
@@ -95,7 +97,8 @@ def test_build_decision_bundle_pack_includes_backfill_and_decision_state(monkeyp
     assert 'historical_shadow_daily_rollup.csv' in pack
     assert summary['best_shadow_profile'] == 'soft_bounce_quality'
     assert summary['latest_selected_day'] == '2026-04-02'
-    assert summary['decision_recommendation_code'] == 'hold_live_behavior_and_keep_accumulating'
+    assert summary['decision_recommendation_code'] == 'historical_replay_supports_candidate_profile_hold_live_gate'
+    assert summary['historical_replay_shadow']['overall_verdict'] == 'historical_replay_supports_candidate_profile'
     assert backfill['clean_day_count'] == 3
 
 

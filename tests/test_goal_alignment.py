@@ -66,11 +66,13 @@ def test_goal_alignment_summary_highlights_current_phase():
             'currently_valid_now_count': 0,
             'regressed_after_earlier_validity_count': 2,
             'latest_selected_day': '2026-04-02',
+            'historical_replay_shadow': {'available': True, 'overall_verdict': 'historical_replay_supports_candidate_profile', 'recommended_profile': {'profile_name': 'soft_bounce_quality'}, 'trading_day_count': 60},
         },
     )
     assert summary['best_shadow_profile'] == 'soft_bounce_quality'
     assert 'structural classifier' in summary['likely_future_pressure_point']
     assert any('Evidence density is still thin' in item for item in summary['what_matters_now'])
+    assert any('primary evidence engine' in item for item in summary['what_matters_now'])
     text = build_goal_alignment_text(summary)
     assert 'Goal alignment readout' in text
     assert 'What would justify change' in text
@@ -104,6 +106,7 @@ def test_diagnostics_page_renders_goal_alignment_block_and_download(monkeypatch)
                 'clean_day_count': 1,
                 'best_shadow_profile': 'soft_bounce_quality',
                 'overall_promotion_readiness': 'shadow_profile_promising_but_early',
+                'historical_replay_shadow': {'overall_verdict': 'historical_replay_supports_candidate_profile', 'recommended_profile': {'profile_name': 'soft_bounce_quality'}},
                 'currently_valid_now_count': 0,
                 'regressed_after_earlier_validity_count': 2,
                 'decision_recommendation_message': 'Hold live behavior.',
@@ -151,6 +154,10 @@ def test_goal_alignment_text_download_returns_plain_text(monkeypatch):
                 'overall_promotion_readiness': 'shadow_profile_promising_but_early',
                 'decision_recommendation_code': 'hold_live_behavior_and_keep_accumulating',
                 'tradable_universe_count': 1921,
+                'historical_replay_available': True,
+                'historical_replay_best_profile': 'soft_bounce_quality',
+                'historical_replay_overall_verdict': 'historical_replay_supports_candidate_profile',
+                'historical_replay_trading_day_count': 60,
             }
         },
     )
@@ -213,6 +220,8 @@ def test_decision_bundle_pack_includes_goal_alignment_files(monkeypatch, tmp_pat
     monkeypatch.setattr('app.services.decision_bundle.build_checkpoint_decision_pack', lambda *args, **kwargs: checkpoint_pack)
     monkeypatch.setattr('app.services.decision_bundle.build_checkpoint_decision_surface', lambda *args, **kwargs: checkpoint_surface)
     monkeypatch.setattr('app.services.decision_bundle.build_live_trust_snapshot', lambda *args, **kwargs: {'latest_research_run_id': 42})
+    monkeypatch.setattr('app.services.decision_bundle.read_cached_historical_replay_summary', lambda settings: {'overall_verdict': 'historical_replay_supports_candidate_profile', 'recommended_profile': {'profile_name': 'soft_bounce_quality'}, 'trading_day_count': 60})
+    monkeypatch.setattr('app.services.decision_bundle.read_cached_historical_replay_zip', lambda settings: None)
     monkeypatch.setattr('app.services.universe.load_universe', lambda *args, **kwargs: {'status': {'tradable_count': 1921}})
 
     pack = build_decision_bundle_pack(settings, object(), DummyAlpaca(settings), days=60, offsets=[120, 150])

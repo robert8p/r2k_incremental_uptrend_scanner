@@ -69,6 +69,7 @@ def test_diagnostics_page_renders_grouped_actions_and_text_snapshot_buttons(monk
                 'clean_day_count': 1,
                 'best_shadow_profile': 'soft_bounce_quality',
                 'overall_promotion_readiness': 'shadow_profile_promising_but_early',
+                'historical_replay_shadow': {'overall_verdict': 'historical_replay_supports_candidate_profile', 'recommended_profile': {'profile_name': 'soft_bounce_quality'}},
                 'currently_valid_now_count': 0,
                 'regressed_after_earlier_validity_count': 2,
                 'decision_recommendation_message': 'Hold live behavior.',
@@ -84,6 +85,7 @@ def test_diagnostics_page_renders_grouped_actions_and_text_snapshot_buttons(monk
     body = response.text
     assert 'Operational actions' in body
     assert 'Downloads' in body
+    assert 'Historical replay shadow pack' in body
     assert 'Download config .txt' in body
     assert 'Download universe .txt' in body
     assert 'Config snapshot' in body
