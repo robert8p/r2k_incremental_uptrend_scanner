@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <h2>Settings</h2>
+    <form method="post" action="/settings/save{{ token_suffix }}">
+        <div class="grid three">
+            <label>Trading mode
+                <select name="trading_mode">
+                    {% for mode in ["scan_only","paper","live"] %}
+                    <option value="{{ mode }}" {% if config.trading_mode == mode %}selected{% endif %}>{{ mode }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Default notional USD
+                <input type="number" step="1" min="1" name="default_notional_usd" value="{{ config.default_notional_usd }}">
+            </label>
+            <label>Default checkpoint
+                <select name="default_scan_offset_minutes">
+                    {% for offset in [30,60,90,120,150,180] %}
+                    <option value="{{ offset }}" {% if config.default_scan_offset_minutes == offset %}selected{% endif %}>{{ offset }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Scheduled scan offsets
+                <input type="text" name="scheduled_scan_offsets" value="{{ config.scheduled_offsets|join(',') }}">
+            </label>
+            <label>Minimum price
+                <input type="number" step="0.01" min="0.01" name="min_price" value="{{ config.min_price }}">
+            </label>
+            <label>Low-price hard floor
+                <input type="number" step="0.01" min="0.01" name="low_price_hard_floor" value="{{ config.low_price_hard_floor }}">
+            </label>
+            <label>Min avg daily $ volume
+                <input type="number" step="1000" min="0" name="min_avg_dollar_volume" value="{{ config.min_avg_dollar_volume }}">
+            </label>
+            <label>Min intraday $ volume
+                <input type="number" step="1000" min="0" name="min_intraday_dollar_volume" value="{{ config.min_intraday_dollar_volume }}">
+            </label>
+            <label>Target %
+                <input type="number" step="0.1" min="0.1" name="target_pct" value="{{ config.target_pct }}">
+            </label>
+            <label>Stretch target %
+                <input type="number" step="0.1" min="0.1" name="stretch_target_pct" value="{{ config.stretch_target_pct }}">
+            </label>
+            <label>Weight target strength
+                <input type="number" step="0.01" min="0" name="weight_target_strength" value="{{ config.weights.target_strength }}">
+            </label>
+            <label>Weight liquidity
+                <input type="number" step="0.01" min="0" name="weight_liquidity" value="{{ config.weights.liquidity }}">
+            </label>
+            <label>Weight volatility
+                <input type="number" step="0.01" min="0" name="weight_volatility" value="{{ config.weights.volatility_capacity }}">
+            </label>
+            <label>Weight dynamic range
+                <input type="number" step="0.01" min="0" name="weight_dynamic_range" value="{{ config.weights.dynamic_range }}">
+            </label>
+            <label>Weight range position
+                <input type="number" step="0.01" min="0" name="weight_range_position" value="{{ config.weights.range_position }}">
+            </label>
+            <label>Weight time feasibility
+                <input type="number" step="0.01" min="0" name="weight_time_feasibility" value="{{ config.weights.time_feasibility }}">
+            </label>
+            <label>Weight execution quality
+                <input type="number" step="0.01" min="0" name="weight_execution_quality" value="{{ config.weights.execution_quality }}">
+            </label>
+        </div>
+        <button type="submit">Save settings override</button>
+    </form>
+    <p class="muted small">These values are persisted into a local JSON override file. Secrets remain environment-variable only.</p>
+</section>
+{% endblock %}

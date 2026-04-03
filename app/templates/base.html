@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_name }}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <h1>{{ app_name }}</h1>
+            <p class="muted">Version {{ version }} · transparent top-50 continuation scanner</p>
+        </div>
+        <nav class="nav">
+            <a href="/">Live Scanner</a>
+            <a href="/validation{{ token_suffix }}">Backtest / Validation</a>
+            <a href="/settings{{ token_suffix }}">Settings</a>
+            <a href="/diagnostics{{ token_suffix }}">Diagnostics</a>
+            <a href="/healthz" target="_blank">Health</a>
+        </nav>
+    </header>
+
+    <section class="access-bar">
+        <div class="access-bar__title">
+            <strong>Access</strong>
+            <span class="muted small">Store credentials in this browser so protected links and forms keep working.</span>
+        </div>
+        <div class="access-bar__controls">
+            <label>
+                Auth token
+                <input type="password" id="auth-token-input" autocomplete="off" placeholder="Paste AUTH_TOKEN">
+            </label>
+            <label>
+                Admin password
+                <input type="password" id="admin-password-input" autocomplete="off" placeholder="Local only for now">
+            </label>
+            <div class="access-bar__buttons">
+                <button type="button" id="access-save-button">Save access</button>
+                <button type="button" id="access-clear-button" class="secondary-button">Clear</button>
+            </div>
+        </div>
+        <p class="muted small access-bar__note">The auth token is applied client-side to protected links and form actions. The admin password is stored locally only at this stage and is not sent to the server yet.</p>
+    </section>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

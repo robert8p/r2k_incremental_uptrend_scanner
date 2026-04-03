@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid two">
+    <div class="card">
+        <h2>Live scanner</h2>
+        {% if session_info %}
+        <div class="stats-grid">
+            <div><span class="label">Latest trading day</span><strong>{{ session_info.trading_day }}</strong></div>
+            <div><span class="label">Market open</span><strong>{{ session_info.market_open.strftime("%H:%M %Z") }}</strong></div>
+            <div><span class="label">Market close</span><strong>{{ session_info.market_close.strftime("%H:%M %Z") }}</strong></div>
+            <div><span class="label">Minutes since open now</span><strong>{{ session_info.minutes_since_open_now }}</strong></div>
+            <div><span class="label">Minutes until close now</span><strong>{{ session_info.minutes_until_close_now }}</strong></div>
+            <div><span class="label">Default checkpoint</span><strong>{{ settings_snapshot.default_scan_offset_minutes }} min</strong></div>
+        </div>
+        {% endif %}
+        <form method="post" action="/scan/run{{ token_suffix }}" class="inline-form">
+            <label>Trading day
+                <input type="date" name="trading_day" value="{{ session_info.trading_day if session_info else '' }}">
+            </label>
+            <label>Checkpoint
+                <select name="offset_minutes">
+                    {% for offset in [30,60,90,120,150,180] %}
+                    <option value="{{ offset }}" {% if offset == settings_snapshot.default_scan_offset_minutes %}selected{% endif %}>{{ offset }} minutes after open</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button type="submit">Run checkpoint scan</button>
+        </form>
+        <p class="muted small">Manual runs replay the selected day at the chosen checkpoint timestamp. The scheduler can also store scans automatically at the configured checkpoints.</p>
+    </div>
+
+    <div class="card">
+        <h2>Universe / operational status</h2>
+        <div class="stats-grid">
+            <div><span class="label">Source</span><strong>{{ universe_status.source }}</strong></div>
+            <div><span class="label">Proxy constituents</span><strong>{{ universe_status.raw_count }}</strong></div>
+            <div><span class="label">Tradable count</span><strong>{{ universe_status.tradable_count }}</strong></div>
+            <div><span class="label">Cache age</span><strong>{{ universe_status.cache_age_hours }} h</strong></div>
+            <div><span class="label">Trading mode</span><strong>{{ settings_snapshot.trading_mode }}</strong></div>
+            <div><span class="label">Live trading enabled</span><strong>{{ "Yes" if settings_snapshot.enable_live_trading else "No" }}</strong></div>
+        </div>
+        <p class="muted small">{{ universe_status.note }}</p>
+    </div>
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Live trust / research alignment</h2>
+        <div class="stats-grid">
+            <div><span class="label">Latest research run</span><strong>{{ live_trust.latest_research_run_id or 'None' }}</strong></div>
+            <div><span class="label">Current scheduled offsets</span><strong>{{ live_trust.current_scheduled_offsets|join(', ') }}</strong></div>
+            <div><span class="label">Recommended offsets</span><strong>{{ live_trust.recommended_schedule.suggested_scheduled_scan_offsets if live_trust.recommended_schedule else '—' }}</strong></div>
+            <div><span class="label">Schedule aligned</span><strong>{{ 'Yes' if live_trust.schedule_alignment_ok else 'No' }}</strong></div>
+        </div>
+        <p class="muted small">{{ live_trust.schedule_alignment_message }}</p>
+    </div>
+    <div class="card">
+        <h2>Live outcome pipeline</h2>
+        <div class="stats-grid">
+            <div><span class="label">Pending evaluations</span><strong>{{ live_trust.status_counts.pending or 0 }}</strong></div>
+            <div><span class="label">Evaluated outcomes</span><strong>{{ live_trust.status_counts.evaluated or 0 }}</strong></div>
+            <div><span class="label">Errored evaluations</span><strong>{{ live_trust.status_counts.error or 0 }}</strong></div>
+            <div><span class="label">Research reference</span><strong>{{ 'Ready' if live_trust.has_latest_research_reference else 'Missing' }}</strong></div>
+        </div>
+        <p class="muted small">The app now tracks live stage-2 outcomes and compares them against the latest completed offset-ladder research instead of relying on validation alone.</p>
+        <p><a class="button-link" href="/scan/recent/export.zip?days=5&offsets=120,150">Download last 5 sessions · 120/150 scans</a></p>
+        <p><a class="button-link" href="/diagnostics/live-confirmation-pack.zip{{ token_suffix }}">Download live confirmation pack</a></p>
+    </div>
+</section>
+
+{% if live_trust.offset_rows %}
+<section class="card">
+    <h2>Live vs validation drift by offset</h2>
+    <div class="table-wrap">
+        <table class="sortable">
+            <thead>
+                <tr>
+                    <th data-sort="number">Offset</th>
+                    <th data-sort="number">Evaluated scans</th>
+                    <th data-sort="number">Evaluated candidates</th>
+                    <th data-sort="number">Live hit rate</th>
+                    <th data-sort="number">Expected hit rate</th>
+                    <th data-sort="number">Δ hit rate</th>
+                    <th data-sort="number">Live entry touch</th>
+                    <th data-sort="number">Expected entry touch</th>
+                    <th data-sort="text">Drift</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in live_trust.offset_rows %}
+                <tr>
+                    <td>{{ row.scan_offset_minutes }}</td>
+                    <td>{{ row.evaluated_scans }}</td>
+                    <td>{{ row.evaluated_candidates }}</td>
+                    <td>{{ row.live_overall_hit_rate if row.live_overall_hit_rate is not none else '—' }}</td>
+                    <td>{{ row.expected_overall_hit_rate if row.expected_overall_hit_rate is not none else '—' }}</td>
+                    <td>{{ row.delta_overall_hit_rate if row.delta_overall_hit_rate is not none else '—' }}</td>
+                    <td>{{ row.live_entry_touch_rate if row.live_entry_touch_rate is not none else '—' }}</td>
+                    <td>{{ row.expected_entry_touch_rate if row.expected_entry_touch_rate is not none else '—' }}</td>
+                    <td>{{ row.drift_status }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+{% if checkpoint_review and checkpoint_review.summary.selected_day %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Checkpoint-aware live decision surface</h2>
+            <p class="muted">Latest trading day {{ checkpoint_review.summary.selected_day }} · preserve earlier-valid names instead of treating the latest checkpoint as the only truth.</p>
+        </div>
+        <a class="button-link" href="/diagnostics/checkpoint-decision-pack.zip{{ token_suffix }}">Download checkpoint decision pack</a>
+    </div>
+    <div class="stats-grid">
+        <div><span class="label">Unique advanced at any checkpoint</span><strong>{{ checkpoint_review.summary.unique_symbols_advanced_any_checkpoint }}</strong></div>
+        <div><span class="label">Currently valid now</span><strong>{{ checkpoint_review.summary.currently_valid_now_count }}</strong></div>
+        <div><span class="label">Regressed later</span><strong>{{ checkpoint_review.summary.regressed_after_earlier_validity_count }}</strong></div>
+        <div><span class="label">Best checkpoint</span><strong>{{ checkpoint_review.summary.best_checkpoint_offset_minutes or '—' }} min</strong></div>
+    </div>
+    <p class="muted small">{{ checkpoint_review.summary.surface_message }}</p>
+    {% if checkpoint_review.scan_rows %}
+    <div class="table-wrap">
+        <table class="sortable compact">
+            <thead>
+                <tr>
+                    <th data-sort="number">Offset</th>
+                    <th data-sort="number">Stage 2</th>
+                    <th data-sort="number">Actionable tiers</th>
+                    <th data-sort="number">Watchlist</th>
+                    <th data-sort="number">Rejected</th>
+                    <th data-sort="text">Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in checkpoint_review.scan_rows %}
+                <tr>
+                    <td>{{ row.scan_offset_minutes }}</td>
+                    <td>{{ row.stage2_count }}</td>
+                    <td>{{ row.actionable_tier_count }}</td>
+                    <td>{{ row.watchlist_tier_count }}</td>
+                    <td>{{ row.rejected_tier_count }}</td>
+                    <td><a href="/scan/{{ row.scan_id }}">Scan {{ row.scan_id }}</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% if checkpoint_review.current_valid_now %}
+    <h3>Currently valid now</h3>
+    <div class="table-wrap">
+        <table class="sortable compact">
+            <thead>
+                <tr>
+                    <th data-sort="text">Symbol</th>
+                    <th data-sort="number">Offset</th>
+                    <th data-sort="number">Score</th>
+                    <th data-sort="text">Tier</th>
+                    <th data-sort="text">Lane</th>
+                    <th data-sort="text">Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in checkpoint_review.current_valid_now %}
+                <tr>
+                    <td>{{ row.symbol }}</td>
+                    <td>{{ row.scan_offset_minutes }}</td>
+                    <td>{{ row.total_score }}</td>
+                    <td>{{ row.recommendation_tier }}</td>
+                    <td>{{ row.execution_lane }}</td>
+                    <td><a href="/scan/{{ row.scan_id }}/candidate/{{ row.symbol }}">Detail</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% if checkpoint_review.regressed_candidates %}
+    <h3>Earlier-valid today, now regressed</h3>
+    <div class="table-wrap">
+        <table class="sortable compact">
+            <thead>
+                <tr>
+                    <th data-sort="text">Symbol</th>
+                    <th data-sort="number">First valid</th>
+                    <th data-sort="number">Best score</th>
+                    <th data-sort="text">Latest class</th>
+                    <th data-sort="text">Latest reason</th>
+                    <th data-sort="text">Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in checkpoint_review.regressed_candidates %}
+                <tr>
+                    <td>{{ row.symbol }}</td>
+                    <td>{{ row.first_advanced_offset_minutes }} min</td>
+                    <td>{{ row.best_total_score }}</td>
+                    <td>{{ row.latest_range_classification }}</td>
+                    <td>{{ row.latest_exclusion_reason or row.latest_score_cap_reason }}</td>
+                    <td><a href="/scan/{{ row.best_advanced_scan_id }}/candidate/{{ row.symbol }}">Best checkpoint</a>{% if row.latest_scan_id %} · <a href="/scan/{{ row.latest_scan_id }}/candidate/{{ row.symbol }}">Latest</a>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+{% if decision_state %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Current decision state</h2>
+            <p class="muted">Automated summary of the evidence chain so you do not need to pull multiple diagnostics packs to know the current recommendation.</p>
+        </div>
+        <a class="button-link" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Download decision bundle</a>
+    </div>
+    <div class="stats-grid">
+        <div><span class="label">Latest selected day</span><strong>{{ decision_state.latest_selected_day or 'None' }}</strong></div>
+        <div><span class="label">Clean days</span><strong>{{ decision_state.clean_day_count }}</strong></div>
+        <div><span class="label">Best shadow profile</span><strong>{{ decision_state.best_shadow_profile or '—' }}</strong></div>
+        <div><span class="label">Promotion readiness</span><strong>{{ decision_state.overall_promotion_readiness or '—' }}</strong></div>
+        <div><span class="label">Currently valid now</span><strong>{{ decision_state.currently_valid_now_count }}</strong></div>
+        <div><span class="label">Regressed later</span><strong>{{ decision_state.regressed_after_earlier_validity_count }}</strong></div>
+    </div>
+    <p class="muted small">{{ decision_state.decision_recommendation_message }}</p>
+</section>
+{% endif %}
+
+{% if latest_scan %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Latest stored scan</h2>
+            <p class="muted">Scan #{{ latest_scan.id }} · {{ latest_scan.trading_day }} · {{ latest_scan.scan_offset_minutes }} minutes after open</p>
+        </div>
+        <a class="button-link" href="/scan/{{ latest_scan.id }}">Open scan detail</a>
+    </div>
+    <div class="stats-grid">
+        <div><span class="label">Target group size</span><strong>{{ latest_scan.summary.target_group_size }}</strong></div>
+        <div><span class="label">Advanced to stage 2</span><strong>{{ latest_scan.summary.advanced_count }}</strong></div>
+        <div><span class="label">Leader</span><strong>{{ latest_scan.summary.leader_symbol }}</strong></div>
+        <div><span class="label">Leader gain</span><strong>{{ latest_scan.summary.leader_gain_pct }}%</strong></div>
+        <div><span class="label">Checkpoint minutes until close</span><strong>{{ latest_scan.summary.checkpoint_minutes_until_close }}</strong></div>
+        <div><span class="label">Stored at</span><strong>{{ latest_scan.created_at }}</strong></div>
+    </div>
+    {% if latest_scan.summary.shortlist_alignment %}
+    <p class="muted small">Shortlist alignment: {{ latest_scan.summary.shortlist_alignment.selection_mode or 'unknown' }} · pool {{ latest_scan.summary.shortlist_alignment.alignment_pool_size or 0 }} · kept {{ latest_scan.summary.shortlist_alignment.alignment_prefilter_kept_count or 0 }}.</p>
+    {% endif %}
+
+    <div class="toolbar">
+        <input type="search" class="table-search" placeholder="Search symbol or rationale…" data-target-table="latest-candidates">
+    </div>
+    <div class="table-wrap">
+        <table id="latest-candidates" class="sortable">
+            <thead>
+                <tr>
+                    <th data-sort="text">Symbol</th>
+                    <th data-sort="number">Mover rank</th>
+                    <th data-sort="number">Intraday % gain</th>
+                    <th data-sort="number">Score</th>
+                    <th data-sort="number">Price</th>
+                    <th data-sort="number">Relative volume</th>
+                    <th data-sort="number">Range location</th>
+                    <th data-sort="text">Range class</th>
+                    <th data-sort="text">Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in latest_candidates if row.advanced_to_stage2 %}
+                <tr>
+                    <td>{{ row.symbol }}</td>
+                    <td>{{ row.mover_rank }}</td>
+                    <td>{{ row.intraday_pct_gain }}</td>
+                    <td>{{ row.total_score }}</td>
+                    <td>{{ row.current_price }}</td>
+                    <td>{{ row.relative_volume }}</td>
+                    <td>{{ row.metrics.range_current_location if row.metrics.range_current_location is defined else "" }}</td>
+                    <td>{{ row.metrics.range_classification if row.metrics.range_classification is defined else "" }}</td>
+                    <td><a href="/scan/{{ latest_scan.id }}/candidate/{{ row.symbol }}">Open</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<section class="card">
+    <h2>Recent validation runs</h2>
+    {% if recent_validations %}
+    <div class="table-wrap">
+        <table class="sortable">
+            <thead>
+                <tr>
+                    <th data-sort="number">ID</th>
+                    <th data-sort="text">Date range</th>
+                    <th data-sort="number">Checkpoint</th>
+                    <th data-sort="number">Overall hit rate</th>
+                    <th data-sort="number">Precision@5</th>
+                    <th data-sort="number">Precision@10</th>
+                    <th data-sort="text">Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in recent_validations %}
+                <tr>
+                    <td>{{ row.id }}</td>
+                    <td>{{ row.start_date }} → {{ row.end_date }}</td>
+                    <td>{{ row.scan_offset_minutes }}</td>
+                    <td>{{ row.summary.overall_hit_rate }}</td>
+                    <td>{{ row.summary.precision_at_5 }}</td>
+                    <td>{{ row.summary.precision_at_10 }}</td>
+                    <td><a href="/validation/{{ row.id }}">Open</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="muted">No validation runs stored yet.</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,798 @@
+{% extends "base.html" %}
+{% block content %}
+{% if selected_research and selected_research.status in ['queued', 'running'] %}
+<meta http-equiv="refresh" content="10">
+{% endif %}
+<section class="card">
+    <h2>Backtest / validation</h2>
+    <form method="post" action="/validation/run{{ token_suffix }}" class="inline-form">
+        <label>Start date
+            <input type="date" name="start_date" value="{{ default_start }}">
+        </label>
+        <label>End date
+            <input type="date" name="end_date" value="{{ default_end }}">
+        </label>
+        <label>Checkpoint
+            <select name="scan_offset_minutes">
+                {% for opt in research_offset_values %}
+                <option value="{{ opt }}" {% if opt == 120 %}selected{% endif %}>{{ opt }} minutes after open</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit">Run validation</button>
+    </form>
+    <p class="muted small">Replay now tests range-cycling behaviour rather than late-session directional continuation. A hit only counts after a post-scan lower-band entry touch and before the two-hours-before-close cutoff.</p>
+</section>
+
+<section class="card accent-card">
+    <h2>Three-month historical download, validation, and calibration</h2>
+    <form method="post" action="/validation/research/run{{ token_suffix }}" class="inline-form">
+        <label>Research end date
+            <input type="date" name="end_date" value="{{ default_research_end }}">
+        </label>
+        <label>Primary checkpoint
+            <select name="scan_offset_minutes">
+                {% for opt in research_offset_values %}
+                <option value="{{ opt }}" {% if opt == 120 %}selected{% endif %}>{{ opt }} minutes after open</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Offset ladder
+            <input type="text" name="offset_ladder" value="{{ settings_snapshot.research_offset_ladder }}" placeholder="90,120,150,180">
+        </label>
+        <label class="checkbox-row">
+            <input type="checkbox" name="run_offset_ladder" value="1" checked>
+            <span>Sweep multiple checkpoints and recommend a live schedule</span>
+        </label>
+        <label class="checkbox-row">
+            <input type="checkbox" name="apply_recommended_weights" value="1">
+            <span>Auto-apply recommended weights if improvement clears threshold</span>
+        </label>
+        <label class="checkbox-row">
+            <input type="checkbox" name="auto_apply_recommended_schedule" value="1">
+            <span>Auto-apply the recommended live schedule from the ladder result</span>
+        </label>
+        <button type="submit">Download 3 months + validate + calibrate</button>
+    </form>
+    <p class="muted small">This workflow now supports an offset ladder sweep so the app can compare multiple checkpoints, recommend a stronger multi-step live schedule, and only then consider calibration on the best primary checkpoint.</p>
+</section>
+
+
+<section class="card accent-card">
+    <h2>Historical counterfactual gate audit</h2>
+    <form method="post" action="/validation/research/run-gate-audit{{ token_suffix }}" class="inline-form">
+        <label>Start date
+            <input type="date" name="start_date" value="{{ default_start }}">
+        </label>
+        <label>End date
+            <input type="date" name="end_date" value="{{ default_end }}">
+        </label>
+        <label>Checkpoint
+            <select name="scan_offset_minutes">
+                {% for opt in research_offset_values %}
+                <option value="{{ opt }}" {% if opt == 150 %}selected{% endif %}>{{ opt }} minutes after open</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Scenario A name
+            <input type="text" name="scenario_a_name" value="{{ gate_audit_defaults.scenario_a_name }}">
+        </label>
+        <label>Scenario A min avg $ vol
+            <input type="number" step="1000" min="0" name="scenario_a_min_avg_dollar_volume" value="{{ gate_audit_defaults.scenario_a_min_avg_dollar_volume }}">
+        </label>
+        <label>Scenario A min price
+            <input type="number" step="0.01" min="0.01" name="scenario_a_min_price" value="{{ gate_audit_defaults.scenario_a_min_price }}">
+        </label>
+        <label>Scenario A hard floor
+            <input type="number" step="0.01" min="0.01" name="scenario_a_low_price_hard_floor" value="{{ gate_audit_defaults.scenario_a_low_price_hard_floor }}">
+        </label>
+        <label>Scenario B name
+            <input type="text" name="scenario_b_name" value="{{ gate_audit_defaults.scenario_b_name }}">
+        </label>
+        <label>Scenario B min avg $ vol
+            <input type="number" step="1000" min="0" name="scenario_b_min_avg_dollar_volume" value="{{ gate_audit_defaults.scenario_b_min_avg_dollar_volume }}">
+        </label>
+        <label>Scenario B min price
+            <input type="number" step="0.01" min="0.01" name="scenario_b_min_price" value="{{ gate_audit_defaults.scenario_b_min_price }}">
+        </label>
+        <label>Scenario B hard floor
+            <input type="number" step="0.01" min="0.01" name="scenario_b_low_price_hard_floor" value="{{ gate_audit_defaults.scenario_b_low_price_hard_floor }}">
+        </label>
+        <button type="submit">Run gate audit</button>
+    </form>
+    <p class="muted small">This audit reruns the same historical period under baseline and relaxed gate scenarios so the app can test whether lower liquidity or price thresholds admit useful extra stage-2 names or just admit junk.</p>
+</section>
+
+
+<section class="card accent-card">
+    <h2>Offline goal-seek optimizer</h2>
+    <form method="post" action="/validation/research/run-goal-seek{{ token_suffix }}" class="inline-form">
+        <label>Start date
+            <input type="date" name="start_date" value="{{ goal_seek_defaults.start_date }}">
+        </label>
+        <label>End date
+            <input type="date" name="end_date" value="{{ goal_seek_defaults.end_date }}">
+        </label>
+        <label>Train window (days)
+            <input type="number" min="20" step="1" name="train_days" value="{{ goal_seek_defaults.train_days }}">
+        </label>
+        <label>Test window (days)
+            <input type="number" min="10" step="1" name="test_days" value="{{ goal_seek_defaults.test_days }}">
+        </label>
+        <label>Step size (days)
+            <input type="number" min="5" step="1" name="step_days" value="{{ goal_seek_defaults.step_days }}">
+        </label>
+        <label>Embargo (days)
+            <input type="number" min="0" step="1" name="embargo_days" value="{{ goal_seek_defaults.embargo_days }}">
+        </label>
+        <label>Offsets
+            <input type="text" name="offsets" value="{{ goal_seek_defaults.offsets }}" placeholder="120,150">
+        </label>
+        <label>Config scope
+            <select name="config_scope">
+                <option value="focused_liquidity" {% if goal_seek_defaults.config_scope == 'focused_liquidity' %}selected{% endif %}>Focused liquidity / price audit</option>
+                <option value="full" {% if goal_seek_defaults.config_scope == 'full' %}selected{% endif %}>Full challenger set</option>
+            </select>
+        </label>
+        <button type="submit">Run offline goal-seek</button>
+    </form>
+    <p class="muted small">This walk-forward optimizer replays the scanner as if it were live, searches a bounded set of gate challengers, calibrates weights only on the train windows, and promotes only challengers that improve the out-of-sample goal score across time slices. The focused liquidity scope is the faster default because recent live confirmation packs showed starvation was dominated by liquidity and price gates rather than by scoring weights.</p>
+</section>
+
+<div class="grid two">
+    <section class="card">
+        <h2>Stored runs</h2>
+        {% if validations %}
+        <div class="table-wrap">
+            <table class="sortable">
+                <thead>
+                    <tr>
+                        <th data-sort="number">ID</th>
+                        <th data-sort="text">Date range</th>
+                        <th data-sort="number">Checkpoint</th>
+                        <th data-sort="number">Hit rate</th>
+                        <th data-sort="number">P@5</th>
+                        <th data-sort="text">Open</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in validations %}
+                    <tr>
+                        <td>{{ row.id }}</td>
+                        <td>{{ row.start_date }} → {{ row.end_date }}</td>
+                        <td>{{ row.scan_offset_minutes }}</td>
+                        <td>{{ row.summary.overall_hit_rate }}</td>
+                        <td>{{ row.summary.precision_at_5 }}</td>
+                        <td><a href="/validation/{{ row.id }}">Detail</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="muted">No stored validation runs yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2>Research jobs</h2>
+        {% if research_runs %}
+        <div class="table-wrap">
+            <table class="sortable compact">
+                <thead>
+                    <tr>
+                        <th data-sort="number">ID</th>
+                        <th data-sort="text">Status</th>
+                        <th data-sort="number">Progress</th>
+                        <th data-sort="text">Range</th>
+                        <th data-sort="number">Checkpoint</th>
+                        <th data-sort="text">Open</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in research_runs %}
+                    <tr>
+                        <td>{{ row.id }}</td>
+                        <td><span class="status-pill status-{{ row.status }}">{{ row.status }}</span></td>
+                        <td>{{ (row.progress * 100)|round(1) }}%</td>
+                        <td>{{ row.params.start_date }} → {{ row.params.end_date }}</td>
+                        <td>{{ row.params.scan_offset_minutes }}</td>
+                        <td><a href="/validation/research/{{ row.id }}">Detail</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="muted">No research jobs yet.</p>
+        {% endif %}
+    </section>
+</div>
+
+{% if selected_research %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Selected research job #{{ selected_research.id }}</h2>
+            <p class="muted">{{ selected_research.params.start_date }} → {{ selected_research.params.end_date }} · {% if selected_research.params.run_offset_ladder %}offset ladder {{ selected_research.params.offset_ladder|join(', ') }}{% else %}{{ selected_research.params.scan_offset_minutes }} minutes after open{% endif %}</p>
+        </div>
+        <div class="status-pill status-{{ selected_research.status }}">{{ selected_research.status }}</div>
+    </div>
+    <div class="stats-grid">
+        <div><span class="label">Progress</span><strong>{{ (selected_research.progress * 100)|round(1) }}%</strong></div>
+        <div><span class="label">Message</span><strong>{{ selected_research.message or '—' }}</strong></div>
+        <div><span class="label">Created</span><strong>{{ selected_research.created_at }}</strong></div>
+        <div><span class="label">Finished</span><strong>{{ selected_research.finished_at or 'Running' }}</strong></div>
+    </div>
+    {% if selected_research.result and (selected_research.result.best_validation_id or selected_research.result.validation_id) %}
+    <p class="muted">Linked validation run: <a href="/validation/{{ selected_research.result.best_validation_id or selected_research.result.validation_id }}">#{{ selected_research.result.best_validation_id or selected_research.result.validation_id }}</a></p>
+    {% endif %}
+    {% if selected_research.status == 'failed' and selected_research.result and selected_research.result.traceback_tail %}
+    <div class="table-wrap">
+        <table class="compact">
+            <thead><tr><th colspan="1">Failure traceback tail</th></tr></thead>
+            <tbody>
+                {% for line in selected_research.result.traceback_tail %}
+                <tr><td><code>{{ line }}</code></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+
+{% if selected_research and selected_research.result and selected_research.result.offset_ladder_summary %}
+<section class="grid two">
+    <div class="card">
+        <h2>Offset ladder summary</h2>
+        <div class="table-wrap">
+            <table class="compact sortable">
+                <thead><tr><th data-sort="number">Offset</th><th data-sort="number">Validation</th><th data-sort="number">Advanced</th><th data-sort="number">Actionable</th><th data-sort="number">P@10</th><th data-sort="number">Cond. P@10</th><th data-sort="number">Entry touch</th><th data-sort="number">Utility</th><th data-sort="text">Verdict</th><th data-sort="text">Recommended</th></tr></thead>
+                <tbody>
+                    {% for row in selected_research.result.offset_ladder_summary %}
+                    <tr>
+                        <td>{{ row.scan_offset_minutes }}</td>
+                        <td><a href="/validation/{{ row.validation_id }}">#{{ row.validation_id }}</a></td>
+                        <td>{{ row.advanced_stage2_total }}</td>
+                        <td>{{ row.actionable_lane }}</td>
+                        <td>{{ row.precision_at_10 }}</td>
+                        <td>{{ row.conditional_precision_at_10_entry_touched }}</td>
+                        <td>{{ row.entry_touch_rate_stage2 }}</td>
+                        <td>{{ row.utility_score }}</td>
+                        <td>{{ row.validation_verdict }}</td>
+                        <td>{{ row.recommended }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <div class="section-header">
+            <div>
+                <h2>Recommended live schedule</h2>
+                <p class="muted">The app picks the strongest primary checkpoint and, when justified, a second checkpoint to catch names that mature later without guessing blindly.</p>
+            </div>
+            {% if selected_research.status == 'completed' and selected_research.result.recommended_live_schedule and not selected_research.result.auto_applied_schedule %}
+            <form method="post" action="/validation/research/{{ selected_research.id }}/apply-schedule{{ token_suffix }}">
+                <button type="submit">Apply recommended schedule</button>
+            </form>
+            {% endif %}
+        </div>
+        {% if selected_research.result.recommended_live_schedule %}
+        <div class="stats-grid">
+            <div><span class="label">Primary checkpoint</span><strong>{{ selected_research.result.recommended_live_schedule.default_scan_offset_minutes }}</strong></div>
+            <div><span class="label">Secondary checkpoint</span><strong>{{ selected_research.result.recommended_live_schedule.secondary_scan_offset_minutes or '—' }}</strong></div>
+            <div><span class="label">Suggested scheduled offsets</span><strong>{{ selected_research.result.recommended_live_schedule.suggested_scheduled_scan_offsets }}</strong></div>
+            <div><span class="label">All offsets failed gates</span><strong>{{ selected_research.result.recommended_live_schedule.all_offsets_failed_gates }}</strong></div>
+            <div><span class="label">Weights auto-applied</span><strong>{{ selected_research.result.auto_applied }}</strong></div>
+            <div><span class="label">Schedule auto-applied</span><strong>{{ selected_research.result.auto_applied_schedule }}</strong></div>
+        </div>
+        <p class="muted">{{ selected_research.result.recommended_live_schedule.recommendation_basis }}</p>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+
+{% if selected_research and selected_research.params.mode == 'historical_counterfactual_gate_audit' and selected_research.result and selected_research.result.gate_audit_rows %}
+<section class="card">
+    <h2>Historical counterfactual gate audit #{{ selected_research.id }}</h2>
+    <div class="stats-grid">
+        <div><span class="label">Date range</span><strong>{{ selected_research.params.start_date }} → {{ selected_research.params.end_date }}</strong></div>
+        <div><span class="label">Checkpoint</span><strong>{{ selected_research.params.scan_offset_minutes }} min</strong></div>
+        <div><span class="label">Recommended scenario</span><strong>{{ selected_research.result.recommended_gate_scenario.recommended_scenario }}</strong></div>
+        <div><span class="label">Should consider change</span><strong>{{ selected_research.result.recommended_gate_scenario.should_consider_change }}</strong></div>
+    </div>
+    <p class="muted">{{ selected_research.result.recommended_gate_scenario.recommendation_reason }}</p>
+    <div class="table-wrap">
+        <table class="sortable compact">
+            <thead>
+                <tr>
+                    <th data-sort="text">Scenario</th>
+                    <th data-sort="number">Validation ID</th>
+                    <th data-sort="number">Advanced</th>
+                    <th data-sort="number">Δ advanced</th>
+                    <th data-sort="number">Actionable</th>
+                    <th data-sort="number">Δ actionable</th>
+                    <th data-sort="number">P@10</th>
+                    <th data-sort="number">Δ P@10</th>
+                    <th data-sort="number">Conditional P@10</th>
+                    <th data-sort="number">Entry touch</th>
+                    <th data-sort="number">Utility</th>
+                    <th data-sort="number">Newly admitted</th>
+                    <th data-sort="number">Newly admitted hit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in selected_research.result.gate_audit_rows %}
+                <tr>
+                    <td>{{ row.scenario_name }}</td>
+                    <td>{{ row.validation_id }}</td>
+                    <td>{{ row.advanced_stage2_total }}</td>
+                    <td>{{ row.delta_advanced_stage2_total }}</td>
+                    <td>{{ row.actionable_lane }}</td>
+                    <td>{{ row.delta_actionable_lane }}</td>
+                    <td>{{ row.precision_at_10 }}</td>
+                    <td>{{ row.delta_precision_at_10 }}</td>
+                    <td>{{ row.conditional_precision_at_10_entry_touched }}</td>
+                    <td>{{ row.entry_touch_rate_stage2 }}</td>
+                    <td>{{ row.utility_score }}</td>
+                    <td>{{ row.newly_admitted_stage2 }}</td>
+                    <td>{{ row.newly_admitted_hit_rate if row.newly_admitted_hit_rate is not none else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% for row in selected_research.result.gate_audit_rows if row.newly_admitted_baseline_reasons %}
+    <div class="card subtle-card">
+        <h3>{{ row.scenario_name }} — why the newly admitted names were blocked under baseline</h3>
+        <div class="table-wrap">
+            <table class="compact">
+                <thead><tr><th>Baseline exclusion reason</th><th>Count</th></tr></thead>
+                <tbody>
+                    {% for item in row.newly_admitted_baseline_reasons %}
+                    <tr><td>{{ item.reason }}</td><td>{{ item.count }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+
+
+{% if selected_research and selected_research.params.mode == 'offline_goal_seek_optimization' and selected_research.result and selected_research.result.ranked_configs %}
+<section class="card">
+    <h2>Offline goal-seek optimization #{{ selected_research.id }}</h2>
+    <div class="stats-grid">
+        <div><span class="label">Date range</span><strong>{{ selected_research.params.start_date }} → {{ selected_research.params.end_date }}</strong></div>
+        <div><span class="label">Offsets</span><strong>{{ selected_research.result.summary.offsets|join(', ') }}</strong></div>
+        <div><span class="label">Walk-forward windows</span><strong>{{ selected_research.result.summary.window_count }}</strong></div>
+        <div><span class="label">Configs tested</span><strong>{{ selected_research.result.summary.config_count }}</strong></div>
+        <div><span class="label">Best config</span><strong>{{ selected_research.result.summary.best_config_name }}</strong></div>
+        <div><span class="label">Goal standard met</span><strong>{{ selected_research.result.summary.goal_standard_met }}</strong></div>
+        <div><span class="label">Architecture blocker</span><strong>{{ selected_research.result.summary.architecture_blocker }}</strong></div>
+        <div><span class="label">Best aggregate goal score</span><strong>{{ selected_research.result.summary.best_aggregate_goal_score }}</strong></div>
+    </div>
+    <p class="muted">Recommended next action: {{ selected_research.result.recommended_configuration.next_action }}</p>
+    <div class="table-wrap">
+        <table class="sortable compact">
+            <thead>
+                <tr>
+                    <th data-sort="text">Config</th>
+                    <th data-sort="number">Aggregate goal</th>
+                    <th data-sort="number">Mean P@10</th>
+                    <th data-sort="number">Mean conditional P@10</th>
+                    <th data-sort="number">Mover-rank lift</th>
+                    <th data-sort="number">Entry touch</th>
+                    <th data-sort="number">Goal std</th>
+                    <th data-sort="number">Failure rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in selected_research.result.ranked_configs %}
+                <tr>
+                    <td>{{ row.config_name }}</td>
+                    <td>{{ row.aggregate.aggregate_goal_score }}</td>
+                    <td>{{ row.aggregate.mean_precision_at_10 }}</td>
+                    <td>{{ row.aggregate.mean_conditional_precision_at_10_entry_touched }}</td>
+                    <td>{{ row.aggregate.mean_mover_rank_lift_precision_at_10 }}</td>
+                    <td>{{ row.aggregate.mean_entry_touch_rate_stage2 }}</td>
+                    <td>{{ row.aggregate.goal_score_std }}</td>
+                    <td>{{ row.aggregate.fold_failure_rate }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if selected_research.result.champion_config %}
+    <div class="card subtle-card">
+        <h3>Champion configuration</h3>
+        <p class="muted">{{ selected_research.result.champion_config.rationale }}</p>
+        <pre>{{ selected_research.result.champion_config.overrides | tojson(indent=2) }}</pre>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+{% if selected %}
+<section class="card">
+    <h2>Selected run #{{ selected.id }}</h2>
+    <div class="stats-grid">
+        <div><span class="label">Date range</span><strong>{{ selected.start_date }} → {{ selected.end_date }}</strong></div>
+        <div><span class="label">Checkpoint</span><strong>{{ selected.scan_offset_minutes }} min</strong></div>
+        <div><span class="label">Days replayed</span><strong>{{ selected.summary.days }}</strong></div>
+        <div><span class="label">Scored replay rows</span><strong>{{ selected.summary.scored_replay_rows_total }}</strong></div>
+        <div><span class="label">Advanced stage-2 rows</span><strong>{{ selected.summary.advanced_stage2_total }}</strong></div>
+        <div><span class="label">Overall hit rate</span><strong>{{ selected.summary.overall_hit_rate }}</strong></div>
+        <div><span class="label">Precision@5</span><strong>{{ selected.summary.precision_at_5 }}</strong></div>
+        <div><span class="label">Precision@10</span><strong>{{ selected.summary.precision_at_10 }}</strong></div>
+        <div><span class="label">Precision@20</span><strong>{{ selected.summary.precision_at_20 }}</strong></div>
+        <div><span class="label">Average MFE</span><strong>{{ selected.summary.avg_mfe_pct }}</strong></div>
+        <div><span class="label">Average MAE</span><strong>{{ selected.summary.avg_mae_pct }}</strong></div>
+        <div><span class="label">Median minutes to entry</span><strong>{{ selected.summary.median_minutes_to_entry }}</strong></div>
+        <div><span class="label">Median minutes to target</span><strong>{{ selected.summary.median_minutes_to_target }}</strong></div>
+        <div><span class="label">Stage-2 entry touch rate</span><strong>{{ selected.summary.entry_touch_rate_stage2 }}</strong></div>
+        <div><span class="label">Conditional P@10 (entry touched)</span><strong>{{ selected.summary.conditional_precision_at_10_entry_touched }}</strong></div>
+        <div><span class="label">Validation verdict</span><strong>{{ selected.summary.validation_verdict.verdict }}</strong></div>
+    </div>
+    <p class="muted"><a href="/validation/{{ selected.id }}/summary.json">Download summary JSON</a> · <a href="/validation/{{ selected.id }}/rows.csv">Download rows CSV</a></p>
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Replay methodology</h2>
+        <div class="stats-grid">
+            <div><span class="label">Post-scan entry touch required</span><strong>{{ selected.summary.entry_methodology.requires_post_scan_touch }}</strong></div>
+            <div><span class="label">Same-bar target credit disabled</span><strong>{{ selected.summary.entry_methodology.disallows_same_bar_target_credit }}</strong></div>
+            <div><span class="label">Scored-row entry touch rate</span><strong>{{ selected.summary.entry_touch_rate_scored }}</strong></div>
+            <div><span class="label">Stage-2 entry touch rate</span><strong>{{ selected.summary.entry_touch_rate_stage2 }}</strong></div>
+            <div><span class="label">Entry fill mode</span><strong>{{ selected.summary.replay_honesty.entry_fill_mode }}</strong></div>
+            <div><span class="label">Target hit mode</span><strong>{{ selected.summary.replay_honesty.target_hit_mode }}</strong></div>
+        </div>
+        <p class="muted">{{ selected.summary.entry_methodology.description }}</p>
+    </div>
+    <div class="card">
+        <h2>Stage-2 vs mover-rank-only baseline</h2>
+        <div class="table-wrap">
+            <table class="compact">
+                <thead><tr><th>Metric</th><th>Mover-rank baseline</th><th>Stage-2 score</th><th>Delta</th></tr></thead>
+                <tbody>
+                    <tr><td>Precision@5</td><td>{{ selected.summary.baseline_comparison.mover_rank_only.precision_at_5 }}</td><td>{{ selected.summary.precision_at_5 }}</td><td>{{ selected.summary.baseline_comparison.stage2_delta_vs_mover_rank.precision_at_5 }}</td></tr>
+                    <tr><td>Precision@10</td><td>{{ selected.summary.baseline_comparison.mover_rank_only.precision_at_10 }}</td><td>{{ selected.summary.precision_at_10 }}</td><td>{{ selected.summary.baseline_comparison.stage2_delta_vs_mover_rank.precision_at_10 }}</td></tr>
+                    <tr><td>Precision@20</td><td>{{ selected.summary.baseline_comparison.mover_rank_only.precision_at_20 }}</td><td>{{ selected.summary.precision_at_20 }}</td><td>{{ selected.summary.baseline_comparison.stage2_delta_vs_mover_rank.precision_at_20 }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Stage labels</h2>
+        <div class="stats-grid">
+            <div><span class="label">Structural positive count / rate</span><strong>{{ selected.summary.stage_label_summary.structural_tradability_positive_count }} / {{ selected.summary.stage_label_summary.structural_tradability_positive_rate_scored }}</strong></div>
+            <div><span class="label">Entry accessible count / rate</span><strong>{{ selected.summary.stage_label_summary.entry_accessibility_positive_count }} / {{ selected.summary.stage_label_summary.entry_accessibility_positive_rate_stage2 }}</strong></div>
+            <div><span class="label">Follow-through positive count / rate</span><strong>{{ selected.summary.stage_label_summary.follow_through_quality_positive_count }} / {{ selected.summary.stage_label_summary.follow_through_quality_positive_rate_entry_touched }}</strong></div>
+            <div><span class="label">Conditional hit rate</span><strong>{{ selected.summary.conditional_hit_rate_entry_touched }}</strong></div>
+        </div>
+    </div>
+    <div class="card">
+        <h2>Tier summary</h2>
+        <div class="table-wrap">
+            <table class="compact">
+                <thead><tr><th>Tier</th><th>Count</th><th>Hit rate</th><th>Conditional hit (entry touched)</th><th>Avg distance to entry %</th><th>Avg ETA to touch</th><th>Avg touch urgency</th><th>Avg entry-touch likelihood</th><th>Avg expected actionability</th><th>Avg actionability</th><th>Avg headline rank</th></tr></thead>
+                <tbody>
+                    {% for row in selected.summary.tier_summary %}
+                    <tr><td>{{ row.tier }}</td><td>{{ row.count }}</td><td>{{ row.hit_rate }}</td><td>{{ row.conditional_hit_rate_entry_touched }}</td><td>{{ row.avg_distance_to_entry_pct }}</td><td>{{ row.avg_expected_minutes_to_touch }}</td><td>{{ row.avg_touch_urgency_score }}</td><td>{{ row.avg_entry_touch_likelihood_score }}</td><td>{{ row.avg_expected_actionability_score }}</td><td>{{ row.avg_actionability_score }}</td><td>{{ row.avg_headline_rank_score }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Recommendation books</h2>
+        <div class="table-wrap">
+            <table class="compact">
+                <thead><tr><th>Book</th><th>Count</th><th>Hit rate</th><th>Conditional hit (entry touched)</th><th>Avg distance to entry %</th><th>Avg ETA to touch</th><th>Avg touch urgency</th><th>Avg queue actionability</th><th>Avg pullback rank</th><th>Avg headline rank</th></tr></thead>
+                <tbody>
+                    {% for row in selected.summary.book_summary %}
+                    <tr><td>{{ row.book }}</td><td>{{ row.count }}</td><td>{{ row.hit_rate }}</td><td>{{ row.conditional_hit_rate_entry_touched }}</td><td>{{ row.avg_distance_to_entry_pct }}</td><td>{{ row.avg_expected_minutes_to_touch }}</td><td>{{ row.avg_touch_urgency_score }}</td><td>{{ row.avg_queue_actionability_score }}</td><td>{{ row.avg_pullback_queue_rank_score }}</td><td>{{ row.avg_headline_rank_score }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <h2>Why this matters</h2>
+        <p class="muted">The app should now separate names that are actionable now from names that are better treated as a pullback queue. That makes iteration faster because conditional edge and immediate accessibility stop being blurred together.</p>
+    </div>
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Execution lanes</h2>
+        <div class="table-wrap">
+            <table class="compact">
+                <thead><tr><th>Lane</th><th>Count</th><th>Hit rate</th><th>Conditional hit (entry touched)</th><th>Entry touch rate</th><th>Avg ETA to touch</th><th>Avg touch urgency</th><th>Avg queue escalation</th></tr></thead>
+                <tbody>
+                    {% for row in selected.summary.execution_lane_summary %}
+                    <tr><td>{{ row.lane }}</td><td>{{ row.count }}</td><td>{{ row.hit_rate }}</td><td>{{ row.conditional_hit_rate_entry_touched }}</td><td>{{ row.entry_touch_rate }}</td><td>{{ row.avg_expected_minutes_to_touch }}</td><td>{{ row.avg_touch_urgency_score }}</td><td>{{ row.avg_queue_escalation_score }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <h2>Why this matters</h2>
+        <p class="muted">The app should now make the operating cadence explicit: trade now, monitor every 5 minutes, monitor every 15 minutes, or leave on a passive watchlist. That is more actionable than a single mixed watchlist score.</p>
+    </div>
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Pipeline funnel</h2>
+        <div class="stats-grid">
+            <div><span class="label">Scored rows</span><strong>{{ selected.summary.stage_funnel_summary.scored_rows }}</strong></div>
+            <div><span class="label">Advanced stage 2</span><strong>{{ selected.summary.stage_funnel_summary.advanced_stage2 }}</strong></div>
+            <div><span class="label">Headline shortlist</span><strong>{{ selected.summary.stage_funnel_summary.headline_shortlist }}</strong></div>
+            <div><span class="label">Ready now</span><strong>{{ selected.summary.stage_funnel_summary.ready_now }}</strong></div>
+            <div><span class="label">Near ready</span><strong>{{ selected.summary.stage_funnel_summary.near_ready }}</strong></div>
+            <div><span class="label">Watchlist</span><strong>{{ selected.summary.stage_funnel_summary.watchlist }}</strong></div>
+            <div><span class="label">Pullback queue</span><strong>{{ selected.summary.stage_funnel_summary.pullback_queue }}</strong></div>
+            <div><span class="label">Touch-soon queue</span><strong>{{ selected.summary.stage_funnel_summary.touch_soon_queue }}</strong></div>
+            <div><span class="label">Touch-later queue</span><strong>{{ selected.summary.stage_funnel_summary.touch_later_queue }}</strong></div>
+            <div><span class="label">Structural watchlist</span><strong>{{ selected.summary.stage_funnel_summary.structural_watchlist }}</strong></div>
+            <div><span class="label">Actionable lane</span><strong>{{ selected.summary.stage_funnel_summary.actionable_lane }}</strong></div>
+            <div><span class="label">Monitor 5m</span><strong>{{ selected.summary.stage_funnel_summary.monitor_5m }}</strong></div>
+            <div><span class="label">Monitor 15m</span><strong>{{ selected.summary.stage_funnel_summary.monitor_15m }}</strong></div>
+            <div><span class="label">Passive watchlist</span><strong>{{ selected.summary.stage_funnel_summary.passive_watchlist }}</strong></div>
+            <div><span class="label">Entry accessible</span><strong>{{ selected.summary.stage_funnel_summary.entry_accessible }}</strong></div>
+            <div><span class="label">Entry touched</span><strong>{{ selected.summary.stage_funnel_summary.entry_touched }}</strong></div>
+            <div><span class="label">Follow-through positive</span><strong>{{ selected.summary.stage_funnel_summary.follow_through_positive }}</strong></div>
+            <div><span class="label">Advanced from scored</span><strong>{{ selected.summary.stage_funnel_summary.rates.advanced_from_scored }}</strong></div>
+            <div><span class="label">Headline from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.headline_from_advanced }}</strong></div>
+            <div><span class="label">Ready now from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.ready_now_from_advanced }}</strong></div>
+            <div><span class="label">Near ready from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.near_ready_from_advanced }}</strong></div>
+            <div><span class="label">Pullback queue from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.pullback_queue_from_advanced }}</strong></div>
+            <div><span class="label">Touch-soon queue from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.touch_soon_queue_from_advanced }}</strong></div>
+            <div><span class="label">Touch-later queue from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.touch_later_queue_from_advanced }}</strong></div>
+            <div><span class="label">Structural watchlist from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.structural_watchlist_from_advanced }}</strong></div>
+            <div><span class="label">Actionable lane from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.actionable_lane_from_advanced }}</strong></div>
+            <div><span class="label">Monitor 5m from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.monitor_5m_from_advanced }}</strong></div>
+            <div><span class="label">Monitor 15m from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.monitor_15m_from_advanced }}</strong></div>
+            <div><span class="label">Passive watchlist from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.passive_watchlist_from_advanced }}</strong></div>
+            <div><span class="label">Entry accessible from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.entry_accessible_from_advanced }}</strong></div>
+            <div><span class="label">Entry touched from advanced</span><strong>{{ selected.summary.stage_funnel_summary.rates.entry_touched_from_advanced }}</strong></div>
+            <div><span class="label">Follow-through from touched</span><strong>{{ selected.summary.stage_funnel_summary.rates.follow_through_from_entry_touched }}</strong></div>
+        </div>
+    </div>
+    <div class="card">
+        <h2>Interpretation</h2>
+        <p class="muted">The pipeline is now meant to separate structural tradability, entry readiness, and follow-through quality instead of forcing one blended gate to do all three jobs at once.</p>
+    </div>
+
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Touch-window bands</h2>
+        <div class="table-wrap">
+            <table class="compact">
+                <thead><tr><th>Band</th><th>Count</th><th>Hit rate</th><th>Conditional hit (entry touched)</th><th>Entry touch rate</th><th>Avg ETA to touch</th><th>Avg touch urgency</th></tr></thead>
+                <tbody>
+                    {% for row in selected.summary.touch_window_summary %}
+                    <tr><td>{{ row.touch_window_band }}</td><td>{{ row.count }}</td><td>{{ row.hit_rate }}</td><td>{{ row.conditional_hit_rate_entry_touched }}</td><td>{{ row.entry_touch_rate }}</td><td>{{ row.avg_expected_minutes_to_touch }}</td><td>{{ row.avg_touch_urgency_score }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <h2>Interpretation</h2>
+        <p class="muted">The pullback queue now splits into names likely to become tradable soon versus later. That should speed up development by separating immediate execution timing from broader structural quality.</p>
+    </div>
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Validation verdict</h2>
+        <div class="table-wrap">
+            <table class="compact">
+                <thead><tr><th>Check</th><th>OK</th><th>Detail</th></tr></thead>
+                <tbody>
+                    {% for row in selected.summary.validation_verdict.checks %}
+                    <tr><td>{{ row.name }}</td><td>{{ 'Yes' if row.ok else 'No' }}</td><td>{{ row.detail }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <h2>Historical download summary</h2>
+        <div class="stats-grid">
+            <div><span class="label">Cache enabled</span><strong>{{ selected.summary.download_summary.cache_enabled }}</strong></div>
+            <div><span class="label">Cache hits</span><strong>{{ selected.summary.download_summary.cache_hits }}</strong></div>
+            <div><span class="label">Cache misses</span><strong>{{ selected.summary.download_summary.cache_misses }}</strong></div>
+            <div><span class="label">Downloaded segments</span><strong>{{ selected.summary.download_summary.downloaded_segments }}</strong></div>
+            <div><span class="label">Days requested</span><strong>{{ selected.summary.download_summary.days_requested }}</strong></div>
+            <div><span class="label">Score monotonicity</span><strong>{{ selected.summary.score_bucket_monotonicity.ratio }}</strong></div>
+        </div>
+    </div>
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Range structure distribution</h2>
+        <div class="stats-grid">
+            <div><span class="label">A · gentle upward band</span><strong>{{ selected.summary.range_structure_distribution.A }}</strong></div>
+            <div><span class="label">B · static cycling band</span><strong>{{ selected.summary.range_structure_distribution.B }}</strong></div>
+            <div><span class="label">C · unstable</span><strong>{{ selected.summary.range_structure_distribution.C }}</strong></div>
+            <div><span class="label">Excluded B</span><strong>{{ selected.summary.range_structure_distribution.excluded_by_structure.B }}</strong></div>
+            <div><span class="label">Excluded C</span><strong>{{ selected.summary.range_structure_distribution.excluded_by_structure.C }}</strong></div>
+        </div>
+    </div>
+    <div class="card">
+        <h2>Interpretation</h2>
+        <p class="muted">Stage 2 now accepts both gently rising and static ranges, because the goal is 1% buy-low / sell-high trades inside the band. Only unstable non-range behaviour is excluded outright.</p>
+    </div>
+</section>
+
+{% if selected.summary.calibration %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Calibration analysis</h2>
+            <p class="muted">The calibration sweep re-ranks the same historical stage-2 rows using alternative transparent weight mixes. It does not invent new factors or hide logic.</p>
+        </div>
+        {% if selected_research and selected_research.status == 'completed' and selected.summary.calibration.should_apply %}
+        <form method="post" action="/validation/research/{{ selected_research.id }}/apply-calibration{{ token_suffix }}">
+            <button type="submit">Apply recommended weights</button>
+        </form>
+        {% endif %}
+    </div>
+    <div class="grid two">
+        <div class="card inner-card">
+            <h3>Baseline</h3>
+            <div class="stats-grid compact-grid">
+                <div><span class="label">Objective</span><strong>{{ selected.summary.calibration.baseline.objective }}</strong></div>
+                <div><span class="label">P@5</span><strong>{{ selected.summary.calibration.baseline.precision_at_5 }}</strong></div>
+                <div><span class="label">P@10</span><strong>{{ selected.summary.calibration.baseline.precision_at_10 }}</strong></div>
+                <div><span class="label">P@20</span><strong>{{ selected.summary.calibration.baseline.precision_at_20 }}</strong></div>
+                <div><span class="label">Hit rate</span><strong>{{ selected.summary.calibration.baseline.overall_hit_rate }}</strong></div>
+            </div>
+        </div>
+        <div class="card inner-card">
+            <h3>Recommended</h3>
+            {% if selected.summary.calibration.recommended %}
+            {% if selected.summary.calibration.reason %}<p class="muted">{{ selected.summary.calibration.reason }}</p>{% endif %}
+            <div class="stats-grid compact-grid">
+                <div><span class="label">Objective</span><strong>{{ selected.summary.calibration.recommended.metrics.objective }}</strong></div>
+                <div><span class="label">P@5</span><strong>{{ selected.summary.calibration.recommended.metrics.precision_at_5 }}</strong></div>
+                <div><span class="label">P@10</span><strong>{{ selected.summary.calibration.recommended.metrics.precision_at_10 }}</strong></div>
+                <div><span class="label">P@20</span><strong>{{ selected.summary.calibration.recommended.metrics.precision_at_20 }}</strong></div>
+                <div><span class="label">Hit rate</span><strong>{{ selected.summary.calibration.recommended.metrics.overall_hit_rate }}</strong></div>
+                <div><span class="label">Improvement</span><strong>{{ selected.summary.calibration.improvement }}</strong></div>
+                <div><span class="label">Should apply</span><strong>{{ selected.summary.calibration.should_apply }}</strong></div>
+                {% if selected.summary.calibration.baseline_gate %}
+                <div><span class="label">Beats mover baseline P@10</span><strong>{{ selected.summary.calibration.baseline_gate.best_beats_baseline }}</strong></div>
+                <div><span class="label">Monotonic after calibration</span><strong>{{ selected.summary.calibration.baseline_gate.best_monotonic }}</strong></div>
+                {% endif %}
+            </div>
+            {% else %}
+            <p class="muted">{{ selected.summary.calibration.reason }}</p>
+            {% endif %}
+        </div>
+    </div>
+    {% if selected.summary.calibration.recommended %}
+    <div class="grid two">
+        <div class="card inner-card">
+            <h3>Recommended weights</h3>
+            <div class="table-wrap">
+                <table class="compact sortable">
+                    <thead><tr><th data-sort="text">Component</th><th data-sort="number">Weight</th></tr></thead>
+                    <tbody>
+                        {% for key, value in selected.summary.calibration.recommended.weights.items() %}
+                        <tr><td>{{ key }}</td><td>{{ value }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card inner-card">
+            <h3>Largest shifts</h3>
+            <div class="table-wrap">
+                <table class="compact sortable">
+                    <thead><tr><th data-sort="text">Component</th><th data-sort="number">Delta</th></tr></thead>
+                    <tbody>
+                        {% for row in selected.summary.calibration.recommended.major_weight_shifts %}
+                        <tr><td>{{ row.component }}</td><td>{{ row.delta }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+    <h2>Validation charts</h2>
+    {% if chart_html %}
+        {{ chart_html|safe }}
+    {% else %}
+        <p class="muted">No charts available.</p>
+    {% endif %}
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Hit rate by score bucket</h2>
+        <div class="table-wrap">
+            <table class="sortable compact">
+                <thead><tr><th data-sort="text">Bucket</th><th data-sort="number">Count</th><th data-sort="number">Hit rate</th></tr></thead>
+                <tbody>
+                    {% for row in selected.summary.score_bucket_summary %}
+                    <tr><td>{{ row.bucket }}</td><td>{{ row.count }}</td><td>{{ row.hit_rate }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <h2>Hit rate by mover rank bucket</h2>
+        <div class="table-wrap">
+            <table class="sortable compact">
+                <thead><tr><th data-sort="text">Bucket</th><th data-sort="number">Count</th><th data-sort="number">Hit rate</th></tr></thead>
+                <tbody>
+                    {% for row in selected.summary.mover_bucket_summary %}
+                    <tr><td>{{ row.bucket }}</td><td>{{ row.count }}</td><td>{{ row.hit_rate }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <h2>False positives sample</h2>
+    <div class="table-wrap">
+        <table class="sortable">
+            <thead>
+                <tr>
+                    <th data-sort="text">Day</th>
+                    <th data-sort="text">Symbol</th>
+                    <th data-sort="number">Mover rank</th>
+                    <th data-sort="number">Score</th>
+                    <th data-sort="number">MFE %</th>
+                    <th data-sort="number">MAE %</th>
+                    <th data-sort="text">Rationale</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in selected.summary.false_positives_sample %}
+                <tr>
+                    <td>{{ row.trading_day }}</td>
+                    <td>{{ row.symbol }}</td>
+                    <td>{{ row.mover_rank }}</td>
+                    <td>{{ row.total_score }}</td>
+                    <td>{{ row.mfe_pct }}</td>
+                    <td>{{ row.mae_pct }}</td>
+                    <td>{{ row.rationale }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

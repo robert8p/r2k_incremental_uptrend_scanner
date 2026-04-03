@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Diagnostics</h2>
+            <p class="muted">Operational health, scheduler leadership, live-trust drift, and config snapshot.</p>
+        </div>
+        <div class="inline-actions">
+            <form method="post" action="/diagnostics/evaluate-live-outcomes{{ token_suffix }}">
+                <button type="submit">Evaluate live outcomes</button>
+            </form>
+            <form method="post" action="/diagnostics/refresh-universe{{ token_suffix }}">
+                <button type="submit">Refresh universe cache</button>
+            </form>
+            <a class="button-link" href="/scan/recent/export.zip?days=5&offsets=120,150">Download last 5 sessions · 120/150 scans</a>
+            <a class="button-link" href="/diagnostics/live-confirmation-pack.zip{{ token_suffix }}">Download live confirmation pack</a>
+            <a class="button-link" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Download decision bundle</a>
+            <a class="button-link" href="/diagnostics/stage2-sanity-pack.zip{{ token_suffix }}">Download stage-2 sanity pack</a>
+            <a class="button-link" href="/diagnostics/stage2-regression-pack.zip{{ token_suffix }}">Download stage-2 regression pack</a>
+            <a class="button-link" href="/diagnostics/checkpoint-decision-pack.zip{{ token_suffix }}">Download checkpoint decision pack</a>
+            <a class="button-link" href="/diagnostics/classifier-audit-pack.zip{{ token_suffix }}">Download classifier audit pack</a>
+            <a class="button-link" href="/diagnostics/outcome-adjudication-pack.zip{{ token_suffix }}">Download outcome adjudication pack</a>
+            <a class="button-link" href="/diagnostics/overstrictness-shadow-pack.zip{{ token_suffix }}">Download overstrictness shadow pack</a>
+            <a class="button-link" href="/diagnostics/shadow-promotion-pack.zip{{ token_suffix }}">Download shadow promotion pack</a>
+            <a class="button-link" href="/diagnostics/shadow-visual-review-pack.zip{{ token_suffix }}">Download shadow visual review pack</a>
+        </div>
+    </div>
+    <div class="stats-grid">
+        <div><span class="label">Environment</span><strong>{{ snapshot.app_env }}</strong></div>
+        <div><span class="label">Trading mode</span><strong>{{ snapshot.trading_mode }}</strong></div>
+        <div><span class="label">Latest trading day</span><strong>{{ snapshot.latest_trading_day }}</strong></div>
+        <div><span class="label">Data API</span><strong>{{ snapshot.data_api.message }}</strong></div>
+        <div><span class="label">Universe tradable count</span><strong>{{ snapshot.universe_status.tradable_count }}</strong></div>
+        <div><span class="label">Latest scan id</span><strong>{{ snapshot.latest_scan.id if snapshot.latest_scan else "None" }}</strong></div>
+    </div>
+</section>
+
+{% if snapshot.decision_state %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Current decision state</h2>
+            <p class="muted">Single-machine summary of the current evidence so you do not need to pull multiple packs just to know what the app thinks should happen next.</p>
+        </div>
+        <a class="button-link" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Download decision bundle</a>
+    </div>
+    <div class="stats-grid">
+        <div><span class="label">Latest selected day</span><strong>{{ snapshot.decision_state.latest_selected_day or 'None' }}</strong></div>
+        <div><span class="label">Clean days</span><strong>{{ snapshot.decision_state.clean_day_count }}</strong></div>
+        <div><span class="label">Best shadow profile</span><strong>{{ snapshot.decision_state.best_shadow_profile or '—' }}</strong></div>
+        <div><span class="label">Promotion readiness</span><strong>{{ snapshot.decision_state.overall_promotion_readiness or '—' }}</strong></div>
+        <div><span class="label">Currently valid now</span><strong>{{ snapshot.decision_state.currently_valid_now_count }}</strong></div>
+        <div><span class="label">Regressed later</span><strong>{{ snapshot.decision_state.regressed_after_earlier_validity_count }}</strong></div>
+    </div>
+    <p class="muted small">{{ snapshot.decision_state.decision_recommendation_message }}</p>
+</section>
+{% endif %}
+
+<section class="grid two">
+    <div class="card">
+        <h2>Scheduler leadership</h2>
+        <div class="stats-grid">
+            <div><span class="label">Leader process</span><strong>{{ 'Yes' if snapshot.scheduler_status.leader else 'No' }}</strong></div>
+            <div><span class="label">Scheduler running</span><strong>{{ 'Yes' if snapshot.scheduler_status.scheduler_running else 'No' }}</strong></div>
+            <div><span class="label">Mode</span><strong>{{ snapshot.scheduler_status.mode }}</strong></div>
+            <div><span class="label">PID</span><strong>{{ snapshot.scheduler_status.pid if snapshot.scheduler_status.pid is defined else '—' }}</strong></div>
+        </div>
+        <p class="muted small">The app now uses a file-lock leader guard so only one process may start APScheduler, even if the host launches multiple web processes.</p>
+    </div>
+    <div class="card">
+        <h2>Live trust alignment</h2>
+        <div class="stats-grid">
+            <div><span class="label">Latest research run</span><strong>{{ snapshot.live_trust.latest_research_run_id or 'None' }}</strong></div>
+            <div><span class="label">Current offsets</span><strong>{{ snapshot.live_trust.current_scheduled_offsets|join(', ') }}</strong></div>
+            <div><span class="label">Recommended offsets</span><strong>{{ snapshot.live_trust.recommended_schedule.suggested_scheduled_scan_offsets if snapshot.live_trust.recommended_schedule else '—' }}</strong></div>
+            <div><span class="label">Aligned</span><strong>{{ 'Yes' if snapshot.live_trust.schedule_alignment_ok else 'No' }}</strong></div>
+        </div>
+        <p class="muted small">{{ snapshot.live_trust.schedule_alignment_message }}</p>
+    </div>
+</section>
+
+{% if snapshot.live_trust.offset_rows %}
+<section class="card">
+    <h2>Live vs validation drift</h2>
+    <div class="table-wrap">
+        <table class="sortable compact">
+            <thead>
+                <tr>
+                    <th data-sort="number">Offset</th>
+                    <th data-sort="number">Evaluated scans</th>
+                    <th data-sort="number">Candidates</th>
+                    <th data-sort="number">Live hit</th>
+                    <th data-sort="number">Expected hit</th>
+                    <th data-sort="number">Δ hit</th>
+                    <th data-sort="number">Live touch</th>
+                    <th data-sort="number">Expected touch</th>
+                    <th data-sort="text">Drift</th>
+                    <th data-sort="text">Recommended</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in snapshot.live_trust.offset_rows %}
+                <tr>
+                    <td>{{ row.scan_offset_minutes }}</td>
+                    <td>{{ row.evaluated_scans }}</td>
+                    <td>{{ row.evaluated_candidates }}</td>
+                    <td>{{ row.live_overall_hit_rate if row.live_overall_hit_rate is not none else '—' }}</td>
+                    <td>{{ row.expected_overall_hit_rate if row.expected_overall_hit_rate is not none else '—' }}</td>
+                    <td>{{ row.delta_overall_hit_rate if row.delta_overall_hit_rate is not none else '—' }}</td>
+                    <td>{{ row.live_entry_touch_rate if row.live_entry_touch_rate is not none else '—' }}</td>
+                    <td>{{ row.expected_entry_touch_rate if row.expected_entry_touch_rate is not none else '—' }}</td>
+                    <td>{{ row.drift_status }}</td>
+                    <td>{{ row.recommended }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<section class="grid two">
+    <div class="card">
+        <h2>Config snapshot</h2>
+        <pre class="json">{{ snapshot.config | tojson(indent=2) }}</pre>
+    </div>
+    <div class="card">
+        <h2>Universe snapshot</h2>
+        <pre class="json">{{ snapshot.universe_status | tojson(indent=2) }}</pre>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Recent logs</h2>
+    <pre class="logs">{% for line in logs %}{{ line }}
+{% endfor %}</pre>
+</section>
+{% endblock %}

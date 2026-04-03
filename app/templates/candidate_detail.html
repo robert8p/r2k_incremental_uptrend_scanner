@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>{{ candidate.symbol }} · candidate detail</h2>
+            <p class="muted">{{ candidate.company_name or "Company name unavailable" }} · scan #{{ scan.id }}</p>
+        </div>
+        <a class="button-link" href="/scan/{{ scan.id }}">Back to scan</a>
+    </div>
+    <div class="stats-grid">
+        <div><span class="label">Mover rank</span><strong>{{ candidate.mover_rank }}</strong></div>
+        <div><span class="label">Continuation score</span><strong>{{ candidate.total_score }}</strong></div>
+        <div><span class="label">Checkpoint price</span><strong>{{ candidate.current_price }}</strong></div>
+        <div><span class="label">Session % gain</span><strong>{{ candidate.intraday_pct_gain }}%</strong></div>
+        <div><span class="label">Relative volume</span><strong>{{ candidate.relative_volume }}</strong></div>
+        <div><span class="label">Range class</span><strong>{{ candidate.metrics.range_classification }}</strong></div>
+        <div><span class="label">Advanced to stage 2</span><strong>{{ 'Yes' if candidate.advanced_to_stage2 else 'No' }}</strong></div>
+        <div><span class="label">Recommendation tier</span><strong>{{ candidate.recommendation_tier }}</strong></div>
+        <div><span class="label">Recommendation book</span><strong>{{ candidate.recommendation_book }}</strong></div>
+        <div><span class="label">Execution lane</span><strong>{{ candidate.execution_lane }}</strong></div>
+        <div><span class="label">Touch window</span><strong>{{ candidate.touch_window_band }}</strong></div>
+        <div><span class="label">Exclusion reason</span><strong>{{ candidate.exclusion_reason or '—' }}</strong></div>
+    </div>
+    <p>{{ candidate.rationale }}</p>
+</section>
+
+<section class="grid two">
+    <div class="card">
+        <h2>Entry / target framing</h2>
+        <div class="stats-grid">
+            <div><span class="label">Adaptive range low</span><strong>{{ candidate.metrics.range_band_low }}</strong></div>
+            <div><span class="label">Adaptive range high</span><strong>{{ candidate.metrics.range_band_high }}</strong></div>
+            <div><span class="label">Range width %</span><strong>{{ candidate.metrics.range_band_width_pct }}%</strong></div>
+            <div><span class="label">Current location in range</span><strong>{{ candidate.metrics.range_current_location }}</strong></div>
+            <div><span class="label">Suggested entry low</span><strong>{{ candidate.entry_low }}</strong></div>
+            <div><span class="label">Suggested entry high</span><strong>{{ candidate.entry_high }}</strong></div>
+            <div><span class="label">Distance to entry %</span><strong>{{ candidate.metrics.distance_to_entry_pct }}%</strong></div>
+            <div><span class="label">+1% target</span><strong>{{ candidate.target_price }}</strong></div>
+            <div><span class="label">+2% stretch</span><strong>{{ candidate.stretch_target_price }}</strong></div>
+            <div><span class="label">Indicative stop</span><strong>{{ candidate.stop_price }}</strong></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Component scores</h2>
+        <div class="table-wrap">
+            <table class="sortable compact">
+                <thead>
+                    <tr><th data-sort="text">Component</th><th data-sort="number">Score</th></tr>
+                </thead>
+                <tbody>
+                    {% for k, v in candidate.component_scores.items() %}
+                    <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="muted small">Final score is a weighted sum of explicit component scores. No hidden model layer is used in v1.</p>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Raw metrics</h2>
+    <div class="table-wrap">
+        <table class="sortable compact">
+            <thead>
+                <tr><th data-sort="text">Metric</th><th data-sort="text">Value</th></tr>
+            </thead>
+            <tbody>
+                {% for k, v in candidate.metrics.items() %}
+                    {% if v is mapping or v is sequence and v is not string %}
+                    {% else %}
+                    <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Mini chart</h2>
+    {% if chart_html %}
+        {{ chart_html|safe }}
+    {% else %}
+        <p class="muted">No chart available.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Optional trade submission</h2>
+    <p class="muted">This is intentionally manual. The app defaults to scan-only mode. Paper and live order submission are guarded by explicit mode settings.</p>
+    <form method="post" action="/trade/submit{{ token_suffix }}" class="inline-form">
+        <input type="hidden" name="scan_id" value="{{ scan.id }}">
+        <input type="hidden" name="symbol" value="{{ candidate.symbol }}">
+        <label>Mode
+            <select name="mode">
+                <option value="paper">paper</option>
+                <option value="live">live</option>
+            </select>
+        </label>
+        <label>Notional USD
+            <input type="number" step="1" min="1" name="notional_usd" value="{{ settings_snapshot.default_notional_usd }}">
+        </label>
+        <label>Limit price
+            <input type="number" step="0.0001" min="0.0001" name="limit_price" value="{{ candidate.entry_high }}">
+        </label>
+        <button type="submit">Submit limit buy</button>
+    </form>
+</section>
+{% endblock %}

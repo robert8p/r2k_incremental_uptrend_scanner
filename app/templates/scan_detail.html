@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Scan #{{ scan.id }}</h2>
+            <p class="muted">{{ scan.trading_day }} · {{ scan.scan_offset_minutes }} minutes after open · checkpoint {{ scan.scan_timestamp }}</p>
+        </div>
+        <a class="button-link" href="/">Back to live scanner</a>
+    </div>
+    <div class="stats-grid">
+        <div><span class="label">Universe count</span><strong>{{ scan.universe_count }}</strong></div>
+        <div><span class="label">Top movers selected</span><strong>{{ scan.stage1_count }}</strong></div>
+        <div><span class="label">Advanced to stage 2</span><strong>{{ scan.stage2_count }}</strong></div>
+        <div><span class="label">Leader</span><strong>{{ scan.summary.leader_symbol }}</strong></div>
+        <div><span class="label">Leader gain</span><strong>{{ scan.summary.leader_gain_pct }}%</strong></div>
+        <div><span class="label">Minutes until close at checkpoint</span><strong>{{ scan.summary.checkpoint_minutes_until_close }}</strong></div>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Shortlist alignment</h2>
+    {% set align = scan.summary.shortlist_alignment %}
+    <div class="stats-grid">
+        <div><span class="label">Enabled</span><strong>{{ "Yes" if align.enabled else "No" }}</strong></div>
+        <div><span class="label">Selection mode</span><strong>{{ align.selection_mode or "—" }}</strong></div>
+        <div><span class="label">Raw positive movers</span><strong>{{ align.raw_positive_mover_count or 0 }}</strong></div>
+        <div><span class="label">Alignment pool size</span><strong>{{ align.alignment_pool_size or 0 }}</strong></div>
+        <div><span class="label">Prefilter kept</span><strong>{{ align.alignment_prefilter_kept_count or 0 }}</strong></div>
+        <div><span class="label">Selected stage 1</span><strong>{{ align.selected_stage1_count or scan.stage1_count }}</strong></div>
+    </div>
+    {% if align.prefilter_rejection_counts %}
+    <div class="table-wrap">
+        <table class="sortable">
+            <thead>
+                <tr>
+                    <th data-sort="text">Prefilter rejection reason</th>
+                    <th data-sort="number">Count</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for reason, count in align.prefilter_rejection_counts.items() %}
+                <tr>
+                    <td>{{ reason }}</td>
+                    <td>{{ count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="muted">No shortlist-alignment prefilter rejections were stored for this scan.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Decision surface honesty check</h2>
+    <p class="muted">The stored stage-1 group is not 50 equally actionable ideas. This view separates truly advanced names from watchlist-only and rejected names.</p>
+    <div class="stats-grid">
+        <div><span class="label">Advanced to stage 2</span><strong>{{ decision_surface.advanced_stage2_count }}</strong></div>
+        <div><span class="label">Actionable tiers</span><strong>{{ decision_surface.actionable_tier_count }}</strong></div>
+        <div><span class="label">Watchlist tier</span><strong>{{ decision_surface.watchlist_tier_count }}</strong></div>
+        <div><span class="label">Rejected tier</span><strong>{{ decision_surface.rejected_tier_count }}</strong></div>
+        <div><span class="label">Touch-soon queue</span><strong>{{ decision_surface.touch_soon_queue_count }}</strong></div>
+        <div><span class="label">Structural watchlist</span><strong>{{ decision_surface.structural_watchlist_count }}</strong></div>
+        <div><span class="label">Monitor 5m lane</span><strong>{{ decision_surface.monitor_5m_lane_count }}</strong></div>
+        <div><span class="label">Passive watchlist lane</span><strong>{{ decision_surface.passive_watchlist_lane_count }}</strong></div>
+    </div>
+</section>
+
+{% if checkpoint_review.summary.selected_day %}
+<section class="card">
+    <h2>Checkpoint-aware decision surface</h2>
+    <p class="muted">This day should be read across checkpoints, not only at {{ checkpoint_review.summary.latest_offset_minutes or scan.scan_offset_minutes }} minutes. Earlier-valid names may still matter even when the latest checkpoint is empty.</p>
+    <div class="stats-grid">
+        <div><span class="label">Unique advanced today</span><strong>{{ checkpoint_review.summary.unique_symbols_advanced_any_checkpoint }}</strong></div>
+        <div><span class="label">Currently valid now</span><strong>{{ checkpoint_review.summary.currently_valid_now_count }}</strong></div>
+        <div><span class="label">Regressed later</span><strong>{{ checkpoint_review.summary.regressed_after_earlier_validity_count }}</strong></div>
+        <div><span class="label">Best checkpoint</span><strong>{{ checkpoint_review.summary.best_checkpoint_offset_minutes or '—' }} min</strong></div>
+    </div>
+    {% if checkpoint_review.regressed_candidates %}
+    <div class="table-wrap">
+        <table class="sortable compact">
+            <thead>
+                <tr>
+                    <th data-sort="text">Symbol</th>
+                    <th data-sort="number">First valid</th>
+                    <th data-sort="number">Best score</th>
+                    <th data-sort="text">Latest class</th>
+                    <th data-sort="text">Latest reason</th>
+                    <th data-sort="text">Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in checkpoint_review.regressed_candidates %}
+                <tr>
+                    <td>{{ row.symbol }}</td>
+                    <td>{{ row.first_advanced_offset_minutes }} min</td>
+                    <td>{{ row.best_total_score }}</td>
+                    <td>{{ row.latest_range_classification }}</td>
+                    <td>{{ row.latest_exclusion_reason or row.latest_score_cap_reason }}</td>
+                    <td><a href="/scan/{{ row.best_advanced_scan_id }}/candidate/{{ row.symbol }}">Best checkpoint</a>{% if row.latest_scan_id %} · <a href="/scan/{{ row.latest_scan_id }}/candidate/{{ row.symbol }}">Latest</a>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="muted">No earlier-valid symbols regressed later on this trading day.</p>
+    {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+    <h2>Stage 2 ranked candidates</h2>
+    <div class="toolbar">
+        <input type="search" class="table-search" placeholder="Search ranked candidates…" data-target-table="stage2-table">
+    </div>
+    <div class="table-wrap">
+        <table id="stage2-table" class="sortable">
+            <thead>
+                <tr>
+                    <th data-sort="text">Symbol</th>
+                    <th data-sort="number">Score rank</th>
+                    <th data-sort="number">Mover rank</th>
+                    <th data-sort="number">Intraday % gain</th>
+                    <th data-sort="number">Score</th>
+                    <th data-sort="text">Tier</th>
+                    <th data-sort="text">Book</th>
+                    <th data-sort="text">Lane</th>
+                    <th data-sort="text">Touch window</th>
+                    <th data-sort="number">Price</th>
+                    <th data-sort="number">Cum volume</th>
+                    <th data-sort="number">Relative volume</th>
+                    <th data-sort="number">Range position</th>
+                    <th data-sort="number">Range slope</th>
+                    <th data-sort="number">Minutes remaining</th>
+                    <th data-sort="number">Distance to entry %</th>
+                    <th data-sort="text">Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in stage2|sort(attribute='total_score', reverse=true) %}
+                <tr>
+                    <td>{{ row.symbol }}</td>
+                    <td>{{ row.metrics.score_rank }}</td>
+                    <td>{{ row.mover_rank }}</td>
+                    <td>{{ row.intraday_pct_gain }}</td>
+                    <td>{{ row.total_score }}</td>
+                    <td>{{ row.recommendation_tier }}</td>
+                    <td>{{ row.recommendation_book }}</td>
+                    <td>{{ row.execution_lane }}</td>
+                    <td>{{ row.touch_window_band }}</td>
+                    <td>{{ row.current_price }}</td>
+                    <td>{{ row.current_cum_volume }}</td>
+                    <td>{{ row.relative_volume }}</td>
+                    <td>{{ row.metrics.range_current_location }}</td>
+                    <td>{{ row.metrics.range_slope_bps_per_bar }}</td>
+                    <td>{{ row.metrics.minutes_remaining }}</td>
+                    <td>{{ row.metrics.distance_to_entry_pct }}</td>
+                    <td><a href="/scan/{{ scan.id }}/candidate/{{ row.symbol }}">Detail</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Stage 1 target group view</h2>
+    <p class="muted">The stored stage-1 group after shortlist alignment at the checkpoint. This can be smaller than 50 when the tradable aligned pool is genuinely smaller.</p>
+    <div class="toolbar">
+        <input type="search" class="table-search" placeholder="Search target group…" data-target-table="stage1-table">
+    </div>
+    <div class="table-wrap">
+        <table id="stage1-table" class="sortable">
+            <thead>
+                <tr>
+                    <th data-sort="text">Symbol</th>
+                    <th data-sort="number">Mover rank</th>
+                    <th data-sort="number">Intraday % gain</th>
+                    <th data-sort="number">Current price</th>
+                    <th data-sort="number">Cum volume</th>
+                    <th data-sort="text">Advanced?</th>
+                    <th data-sort="text">Reason / rationale</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in candidates %}
+                <tr>
+                    <td>{{ row.symbol }}</td>
+                    <td>{{ row.mover_rank }}</td>
+                    <td>{{ row.intraday_pct_gain }}</td>
+                    <td>{{ row.current_price }}</td>
+                    <td>{{ row.current_cum_volume }}</td>
+                    <td>{{ "Yes" if row.advanced_to_stage2 else "No" }}</td>
+                    <td>{{ row.exclusion_reason if row.exclusion_reason else row.rationale }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
