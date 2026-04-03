@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: r2k-incremental-uptrend-scanner
+    env: python
+    plan: standard
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.9
+      - key: APP_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: DATABASE_PATH
+        value: /var/data/scanner.db
+      - key: SETTINGS_OVERRIDE_PATH
+        value: /var/data/settings_override.json
+      - key: LOG_LEVEL
+        value: INFO
+      - key: TRADING_MODE
+        value: scan_only
+      - key: ENABLE_LIVE_TRADING
+        value: false
+      - key: ALPACA_DATA_FEED
+        value: sip
+      - key: DEFAULT_SCAN_OFFSET_MINUTES
+        value: 150
+      - key: SCHEDULED_SCAN_OFFSETS
+        value: 120,150
+      - key: STAGE1_ALIGNMENT_ENABLED
+        value: true
+      - key: STAGE1_ALIGNMENT_POOL_MULTIPLIER
+        value: 4
+      - key: STAGE1_ALIGNMENT_MIN_POOL_SIZE
+        value: 150
+      - key: ENABLE_SCHEDULER
+        value: true
+      - key: WEB_CONCURRENCY
+        value: 1
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 5
