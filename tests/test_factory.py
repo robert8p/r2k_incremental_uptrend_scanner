@@ -55,6 +55,8 @@ def test_create_app_registers_runtime_and_core_routes():
         '/validation/research/run-goal-seek',
         '/settings',
         '/diagnostics/decision-bundle.zip',
+        '/diagnostics/config-snapshot.txt',
+        '/diagnostics/universe-snapshot.txt',
         '/healthz',
         '/status',
         '/api/latest-scan',
