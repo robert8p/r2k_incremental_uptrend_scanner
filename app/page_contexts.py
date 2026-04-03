@@ -20,6 +20,7 @@ from app.view_models import (
 from app.services.live_trust import build_live_trust_snapshot
 from app.services.checkpoint_decision_surface import build_checkpoint_decision_surface
 from app.services.decision_bundle import read_cached_decision_state
+from app.services.goal_alignment import build_goal_alignment_summary
 
 
 ChartBuilder = Callable[[Dict[str, Any]], str]
@@ -42,6 +43,12 @@ def build_index_page_context(settings: Settings, db: Database | RepositoryBundle
         trading_day=(latest_scan or {}).get('trading_day'),
         offsets=[120, 150],
     )
+    decision_state = read_cached_decision_state(settings)
+    try:
+        from app.services.universe import load_universe
+        universe_status = load_universe(settings, repos.db, force_refresh=False)['status']
+    except Exception:
+        universe_status = {}
     return {
         'latest_scan': latest_scan,
         'latest_candidates': latest_candidates,
@@ -49,7 +56,8 @@ def build_index_page_context(settings: Settings, db: Database | RepositoryBundle
         'session_info': session_info,
         'live_trust': build_live_trust_snapshot(settings, repos.db),
         'checkpoint_review': checkpoint_review,
-        'decision_state': read_cached_decision_state(settings),
+        'decision_state': decision_state,
+        'goal_alignment': build_goal_alignment_summary(settings, universe_status=universe_status, decision_state=decision_state),
     }
 
 
