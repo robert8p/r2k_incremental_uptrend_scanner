@@ -39,16 +39,22 @@ def build_goal_alignment_summary(
     recommendation = str(decision.get('decision_recommendation_code') or '')
     currently_valid_now_count = int(decision.get('currently_valid_now_count') or 0)
     regressed_count = int(decision.get('regressed_after_earlier_validity_count') or 0)
+    replay_summary = dict(decision.get('historical_replay_shadow') or {})
+    replay_available = bool(replay_summary.get('available'))
+    replay_profile = ((replay_summary.get('recommended_profile') or {}) or {}).get('profile_name')
+    replay_verdict = str(replay_summary.get('overall_verdict') or '')
+    replay_trading_days = int(replay_summary.get('trading_day_count') or 0)
 
     operating_posture = (
         f"Production, {settings.trading_mode}, live trading {'enabled' if settings.enable_live_trading else 'disabled'}, "
         f"{settings.alpaca_data_feed.upper()} data, scheduled checkpoints {', '.join(str(x) for x in settings.scheduled_offsets)} minutes."
     )
 
-    if best_shadow_profile in {'soft_bounce_quality', 'combined_soft_structure'}:
+    if replay_profile in {'soft_bounce_quality', 'combined_soft_structure'} or best_shadow_profile in {'soft_bounce_quality', 'combined_soft_structure'}:
+        focus_profile = replay_profile or best_shadow_profile
         pressure_point = (
             'Strict structural classifier settings still look like the most likely future pressure point, '
-            f'especially {best_shadow_profile.replace("_", " ")}. No live change is justified yet.'
+            f'especially {focus_profile.replace("_", " ")}. No live change is justified yet.'
         )
     else:
         pressure_point = (
@@ -62,6 +68,18 @@ def build_goal_alignment_summary(
         f'Watch clean-day count, currently-valid-now count ({currently_valid_now_count}), and regressed-later count ({regressed_count}) instead of adding more scanner machinery.',
         f'Keep universe and liquidity posture stable while the evidence gate matures; tradable universe currently reports {universe.get("tradable_count", "unknown")} names.',
     ]
+
+    if replay_available:
+        what_matters_now.append(
+            f'Use historical replay under the current clean logic as the primary evidence engine; cached replay currently covers {replay_trading_days} trading day{'s' if replay_trading_days != 1 else ''} and points most strongly at {replay_profile or "no clear profile yet"}.'
+        )
+        what_matters_now.append(
+            'Treat live clean days as the release gate on top of replay evidence, not as the main statistical source of confidence.'
+        )
+    else:
+        what_matters_now.append(
+            'Historical replay under the current clean logic should be treated as the primary evidence engine as soon as the replay bundle is generated.'
+        )
 
     if best_shadow_profile:
         what_matters_now.append(
@@ -82,6 +100,7 @@ def build_goal_alignment_summary(
     justify_change = [
         'A shadow profile reaches eligible_for_narrow_live_trial under the app’s own promotion rule.',
         'Multiple additional clean sessions keep showing the same overstrict pattern while false positives remain controlled.',
+        'Historical replay under the current clean logic keeps supporting the same profile across a larger sample instead of only a single clean live day.',
         'The single decision bundle or post-close refresh path shows a reliability break that blocks evidence collection.',
         'The automated evidence begins pointing at a different bottleneck than the current strict structural classifier story.',
     ]
@@ -89,6 +108,10 @@ def build_goal_alignment_summary(
     if readiness == 'eligible_for_narrow_live_trial':
         overall_assessment = (
             'The app is in a promotion-ready state for a narrow controlled trial, but live thresholds should still change only via an explicit approval step.'
+        )
+    elif replay_verdict == 'historical_replay_supports_candidate_profile':
+        overall_assessment = (
+            'The app now has a replay-backed candidate profile under the current clean logic. Live behavior should still stay frozen until the release gate opens on clean live evidence.'
         )
     elif readiness == 'shadow_profile_promising_but_early':
         overall_assessment = (
@@ -119,6 +142,10 @@ def build_goal_alignment_summary(
         'decision_recommendation_code': recommendation,
         'latest_selected_day': decision.get('latest_selected_day'),
         'tradable_universe_count': universe.get('tradable_count'),
+        'historical_replay_available': replay_available,
+        'historical_replay_best_profile': replay_profile,
+        'historical_replay_overall_verdict': replay_verdict,
+        'historical_replay_trading_day_count': replay_trading_days,
     }
 
 
@@ -153,5 +180,9 @@ def build_goal_alignment_text(summary: dict[str, Any]) -> str:
         'overall_promotion_readiness': summary.get('overall_promotion_readiness'),
         'decision_recommendation_code': summary.get('decision_recommendation_code'),
         'tradable_universe_count': summary.get('tradable_universe_count'),
+        'historical_replay_available': summary.get('historical_replay_available'),
+        'historical_replay_best_profile': summary.get('historical_replay_best_profile'),
+        'historical_replay_overall_verdict': summary.get('historical_replay_overall_verdict'),
+        'historical_replay_trading_day_count': summary.get('historical_replay_trading_day_count'),
     }, indent=2)])
     return '\n'.join(lines).strip() + '\n'

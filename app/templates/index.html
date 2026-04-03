@@ -225,6 +225,8 @@
         <div><span class="label">Clean days</span><strong>{{ decision_state.clean_day_count }}</strong></div>
         <div><span class="label">Best shadow profile</span><strong>{{ decision_state.best_shadow_profile or '—' }}</strong></div>
         <div><span class="label">Promotion readiness</span><strong>{{ decision_state.overall_promotion_readiness or '—' }}</strong></div>
+        <div><span class="label">Replay evidence</span><strong>{{ decision_state.historical_replay_shadow.overall_verdict if decision_state.historical_replay_shadow else '—' }}</strong></div>
+        <div><span class="label">Replay best profile</span><strong>{{ decision_state.historical_replay_shadow.recommended_profile.profile_name if decision_state.historical_replay_shadow and decision_state.historical_replay_shadow.recommended_profile else '—' }}</strong></div>
         <div><span class="label">Currently valid now</span><strong>{{ decision_state.currently_valid_now_count }}</strong></div>
         <div><span class="label">Regressed later</span><strong>{{ decision_state.regressed_after_earlier_validity_count }}</strong></div>
     </div>

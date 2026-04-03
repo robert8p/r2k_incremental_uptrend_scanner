@@ -24,6 +24,7 @@
                     <a class="button-link action-button" href="/scan/recent/export.zip?days=5&offsets=120,150">Last 5 sessions · 120/150 scans</a>
                     <a class="button-link action-button" href="/diagnostics/live-confirmation-pack.zip{{ token_suffix }}">Live confirmation pack</a>
                     <a class="button-link action-button" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Decision bundle</a>
+                    <a class="button-link action-button" href="/diagnostics/historical-replay-shadow-pack.zip{{ token_suffix }}">Historical replay shadow pack</a>
                     <a class="button-link action-button" href="/diagnostics/goal-alignment.txt{{ token_suffix }}">Goal alignment .txt</a>
                     <a class="button-link action-button" href="/diagnostics/stage2-sanity-pack.zip{{ token_suffix }}">Stage-2 sanity pack</a>
                     <a class="button-link action-button" href="/diagnostics/stage2-regression-pack.zip{{ token_suffix }}">Stage-2 regression pack</a>
@@ -61,6 +62,8 @@
         <div><span class="label">Clean days</span><strong>{{ snapshot.decision_state.clean_day_count }}</strong></div>
         <div><span class="label">Best shadow profile</span><strong>{{ snapshot.decision_state.best_shadow_profile or '—' }}</strong></div>
         <div><span class="label">Promotion readiness</span><strong>{{ snapshot.decision_state.overall_promotion_readiness or '—' }}</strong></div>
+        <div><span class="label">Replay evidence</span><strong>{{ snapshot.decision_state.historical_replay_shadow.overall_verdict if snapshot.decision_state.historical_replay_shadow else '—' }}</strong></div>
+        <div><span class="label">Replay best profile</span><strong>{{ snapshot.decision_state.historical_replay_shadow.recommended_profile.profile_name if snapshot.decision_state.historical_replay_shadow and snapshot.decision_state.historical_replay_shadow.recommended_profile else '—' }}</strong></div>
         <div><span class="label">Currently valid now</span><strong>{{ snapshot.decision_state.currently_valid_now_count }}</strong></div>
         <div><span class="label">Regressed later</span><strong>{{ snapshot.decision_state.regressed_after_earlier_validity_count }}</strong></div>
     </div>

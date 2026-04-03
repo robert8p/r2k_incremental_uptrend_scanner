@@ -255,6 +255,25 @@ def register_admin_routes(
 
 
 
+
+    @app.get('/diagnostics/historical-replay-shadow-pack.zip')
+    def diagnostics_historical_replay_shadow_pack() -> Response:
+        from app.services.historical_replay_shadow_pack import get_or_build_historical_replay_shadow_zip
+
+        content = get_or_build_historical_replay_shadow_zip(
+            runtime.settings,
+            runtime.db,
+            runtime.alpaca,
+            lookback_days=90,
+            offsets=[120, 150],
+        )
+        return Response(
+            content=content,
+            media_type='application/zip',
+            headers={'Content-Disposition': 'attachment; filename=historical_replay_shadow_pack_last_90_days.zip'},
+        )
+
+
     @app.get('/diagnostics/overstrictness-shadow-pack.zip')
     def diagnostics_overstrictness_shadow_pack() -> Response:
         from app.services.evidence_pack import pack_to_zip_bytes

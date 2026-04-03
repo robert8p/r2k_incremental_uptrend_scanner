@@ -581,7 +581,7 @@ def _report_progress(progress_callback: ProgressCallback, progress: float, messa
         progress_callback(float(progress), message)
 
 
-def run_validation(settings: Settings, db: Database, alpaca: AlpacaClient, start_date: str, end_date: str, scan_offset_minutes: int, *, progress_callback: ProgressCallback = None, cache_history: bool = False, persist: bool = True) -> Dict[str, object]:
+def run_validation(settings: Settings, db: Database, alpaca: AlpacaClient, start_date: str, end_date: str, scan_offset_minutes: int, *, progress_callback: ProgressCallback = None, cache_history: bool = False, persist: bool = True, evaluate_non_advanced_rows: bool = False) -> Dict[str, object]:
     if not alpaca.has_credentials():
         raise RuntimeError('Alpaca credentials are required for validation.')
 
@@ -708,7 +708,8 @@ def run_validation(settings: Settings, db: Database, alpaca: AlpacaClient, start
 
             scored = build_candidate_score(row=row, top_stage1=stage1, intraday_bars=checkpoint_bars, daily_bars=daily_bars, spread_bps=spread_bps_value, minutes_remaining=session.minutes_until_close_checkpoint, settings=settings)
             deadline_ts = _trade_window_deadline(checkpoint_ts, session.minutes_until_close_checkpoint, settings.trade_window_end_buffer_minutes_before_close)
-            if scored['advanced_to_stage2']:
+            should_evaluate_entry = bool(scored['advanced_to_stage2']) or bool(evaluate_non_advanced_rows)
+            if should_evaluate_entry:
                 entry = _find_entry_touch(bars, checkpoint_ts, float(scored['entry_low']), float(scored['entry_high']), deadline_ts, settings)
                 if entry['entry_touched']:
                     outcome = _post_entry_outcome(bars, pd.Timestamp(entry['entry_timestamp']), float(entry['entry_price']), settings.target_pct, deadline_ts, settings, spread_bps_value)

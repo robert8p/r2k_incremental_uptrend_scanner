@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import csv
 import json
+import zipfile
 from datetime import datetime, timezone
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,10 @@ from app.repositories import RepositoryBundle, ensure_repository_bundle
 from app.services.checkpoint_decision_surface import build_checkpoint_decision_pack, build_checkpoint_decision_surface
 from app.services.evidence_pack import pack_to_zip_bytes
 from app.services.goal_alignment import build_goal_alignment_summary, build_goal_alignment_text
+from app.services.historical_replay_shadow_pack import (
+    read_cached_historical_replay_summary,
+    read_cached_historical_replay_zip,
+)
 from app.services.live_trust import build_live_trust_snapshot
 from app.services.shadow_promotion_pack import build_shadow_promotion_pack
 from app.version import VERSION
@@ -20,6 +25,7 @@ from app.version import VERSION
 UTC = timezone.utc
 DEFAULT_DECISION_BUNDLE_DAYS = 60
 DEFAULT_DECISION_BUNDLE_OFFSETS = [120, 150]
+DEFAULT_REPLAY_LOOKBACK_DAYS = 90
 _CACHE_DIR_NAME = 'decision_bundle'
 _CACHE_ZIP_NAME = 'decision_bundle_latest.zip'
 _CACHE_SUMMARY_NAME = 'decision_state_latest.json'
@@ -34,6 +40,7 @@ def _read_json_bytes(raw: bytes) -> dict[str, Any]:
         return {}
 
 
+
 def _read_csv_bytes(raw: bytes) -> list[dict[str, Any]]:
     if not raw:
         return []
@@ -42,6 +49,7 @@ def _read_csv_bytes(raw: bytes) -> list[dict[str, Any]]:
         return [dict(row) for row in reader]
     except Exception:
         return []
+
 
 
 def _to_int(value: Any) -> int:
@@ -53,18 +61,22 @@ def _to_int(value: Any) -> int:
         return 0
 
 
+
 def _cache_dir(settings: Settings) -> Path:
     path = Path(settings.data_dir) / _CACHE_DIR_NAME
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
+
 def _cache_zip_path(settings: Settings) -> Path:
     return _cache_dir(settings) / _CACHE_ZIP_NAME
 
 
+
 def _cache_summary_path(settings: Settings) -> Path:
     return _cache_dir(settings) / _CACHE_SUMMARY_NAME
+
 
 
 def _backfill_summary_from_shadow_pack(shadow_pack: dict[str, bytes], *, days: int, offsets: list[int]) -> dict[str, Any]:
@@ -94,12 +106,48 @@ def _backfill_summary_from_shadow_pack(shadow_pack: dict[str, bytes], *, days: i
     }
 
 
-def _decision_recommendation(*, promotion_readiness: str | None, clean_day_count: int, current_valid_now_count: int, regressed_count: int) -> tuple[str, str]:
+
+def _historical_replay_summary_from_cache(summary: dict[str, Any] | None, *, lookback_days: int, offsets: list[int]) -> dict[str, Any]:
+    payload = dict(summary or {})
+    if not payload:
+        return {
+            'available': False,
+            'bundle_type': 'historical_replay_shadow_pack',
+            'lookback_days_requested': int(lookback_days),
+            'offsets_requested': list(offsets),
+            'overall_verdict': 'historical_replay_not_built',
+            'overall_reason': 'Historical replay shadow pack has not been generated yet.',
+            'recommended_profile': None,
+            'trading_day_count': 0,
+        }
+    payload['available'] = True
+    payload.setdefault('bundle_type', 'historical_replay_shadow_pack')
+    payload.setdefault('lookback_days_requested', int(lookback_days))
+    payload.setdefault('offsets_requested', list(offsets))
+    return payload
+
+
+
+def _decision_recommendation(
+    *,
+    replay_summary: dict[str, Any],
+    promotion_readiness: str | None,
+    clean_day_count: int,
+    current_valid_now_count: int,
+    regressed_count: int,
+) -> tuple[str, str]:
+    replay_verdict = str(replay_summary.get('overall_verdict') or '')
+    replay_profile = ((replay_summary.get('recommended_profile') or {}) or {}).get('profile_name')
     readiness = str(promotion_readiness or 'insufficient_evidence')
     if readiness == 'eligible_for_narrow_live_trial':
         return (
             'eligible_for_narrow_live_trial',
             'A shadow profile has satisfied the automated promotion gate. Keep live behavior unchanged until a controlled trial is explicitly approved.',
+        )
+    if replay_verdict == 'historical_replay_supports_candidate_profile' and replay_profile:
+        return (
+            'historical_replay_supports_candidate_profile_hold_live_gate',
+            f'Historical replay under the current clean logic supports {replay_profile} as the leading candidate profile, but live behavior remains frozen until the live release gate opens.',
         )
     if readiness == 'shadow_profile_promising_but_early':
         return (
@@ -129,7 +177,9 @@ def _decision_recommendation(*, promotion_readiness: str | None, clean_day_count
 
 
 def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int], reason: str) -> dict[str, Any]:
+    replay_summary = _historical_replay_summary_from_cache(None, lookback_days=DEFAULT_REPLAY_LOOKBACK_DAYS, offsets=offsets)
     recommendation_code, recommendation_message = _decision_recommendation(
+        replay_summary=replay_summary,
         promotion_readiness='insufficient_runtime_context',
         clean_day_count=0,
         current_valid_now_count=0,
@@ -153,6 +203,8 @@ def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int
         'surface_message': 'Decision bundle has not been generated yet.',
         'decision_recommendation_code': recommendation_code,
         'decision_recommendation_message': recommendation_message,
+        'evidence_engine': 'historical_replay_primary_live_gate_secondary',
+        'historical_replay_shadow': replay_summary,
         'historical_shadow_backfill': {
             'bundle_type': 'historical_shadow_backfill',
             'days_requested': int(days),
@@ -177,6 +229,7 @@ def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int
     }
 
 
+
 def build_decision_state(
     settings: Settings,
     db: Database | RepositoryBundle,
@@ -192,7 +245,13 @@ def build_decision_state(
     checkpoint_surface = build_checkpoint_decision_surface(settings, repos, offsets=requested_offsets)
     checkpoint_summary = dict(checkpoint_surface.get('summary') or {})
     live_trust = build_live_trust_snapshot(settings, repos.db)
+    replay_summary = _historical_replay_summary_from_cache(
+        read_cached_historical_replay_summary(settings),
+        lookback_days=DEFAULT_REPLAY_LOOKBACK_DAYS,
+        offsets=requested_offsets,
+    )
     recommendation_code, recommendation_message = _decision_recommendation(
+        replay_summary=replay_summary,
         promotion_readiness=str(backfill.get('overall_promotion_readiness') or ''),
         clean_day_count=_to_int(backfill.get('clean_day_count')),
         current_valid_now_count=_to_int(checkpoint_summary.get('currently_valid_now_count')),
@@ -216,11 +275,30 @@ def build_decision_state(
         'surface_message': checkpoint_summary.get('surface_message'),
         'decision_recommendation_code': recommendation_code,
         'decision_recommendation_message': recommendation_message,
+        'evidence_engine': 'historical_replay_primary_live_gate_secondary',
+        'historical_replay_shadow': replay_summary,
         'historical_shadow_backfill': backfill,
         'checkpoint_summary': checkpoint_summary,
         'live_trust_latest_research_run_id': live_trust.get('latest_research_run_id'),
         'decision_bundle_available': True,
     }
+
+
+
+def _extract_cached_replay_files(settings: Settings) -> dict[str, bytes]:
+    raw_zip = read_cached_historical_replay_zip(settings)
+    if not raw_zip:
+        return {}
+    wanted = {
+        'historical_replay_shadow_summary.json',
+        'historical_replay_shadow_daily_rollup.csv',
+        'historical_replay_shadow_profile_rollup.csv',
+    }
+    try:
+        with zipfile.ZipFile(BytesIO(raw_zip), 'r') as zf:
+            return {name: zf.read(name) for name in wanted if name in zf.namelist()}
+    except Exception:
+        return {}
 
 
 
@@ -238,6 +316,8 @@ def build_decision_bundle_pack(
     checkpoint_pack = build_checkpoint_decision_pack(settings, repos, offsets=requested_offsets)
     decision_state = build_decision_state(settings, repos, alpaca, days=days, offsets=requested_offsets)
     backfill = dict(decision_state.get('historical_shadow_backfill') or {})
+    replay_summary = dict(decision_state.get('historical_replay_shadow') or {})
+    replay_cached_files = _extract_cached_replay_files(settings)
     checkpoint_summary = dict(decision_state.get('checkpoint_summary') or {})
     try:
         from app.services.universe import load_universe
@@ -267,11 +347,16 @@ def build_decision_bundle_pack(
         f"- Overall readiness: {backfill.get('overall_promotion_readiness')}",
         f"- Best profile verdict: {backfill.get('best_shadow_profile_verdict')}",
         f"- Source verdict counts: {backfill.get('source_verdict_counts')}",
+        '',
+        '## Historical replay shadow',
+        f"- Available: {replay_summary.get('available')}",
+        f"- Overall verdict: {replay_summary.get('overall_verdict')}",
+        f"- Best replay profile: {((replay_summary.get('recommended_profile') or {}) or {}).get('profile_name')}",
     ]
 
     manifest = {
         'bundle_type': 'decision_bundle',
-        'bundle_contract_version': '1.0',
+        'bundle_contract_version': '1.1',
         'app_version': VERSION,
         'generated_at_utc': decision_state['generated_at_utc'],
         'days_requested': int(days),
@@ -279,6 +364,7 @@ def build_decision_bundle_pack(
         'latest_selected_day': decision_state.get('latest_selected_day'),
         'overall_promotion_readiness': decision_state.get('overall_promotion_readiness'),
         'decision_recommendation_code': decision_state.get('decision_recommendation_code'),
+        'evidence_engine': decision_state.get('evidence_engine'),
     }
 
     pack = {
@@ -287,10 +373,13 @@ def build_decision_bundle_pack(
         'goal_alignment_summary.json': json.dumps(goal_alignment, indent=2).encode('utf-8'),
         'goal_alignment.txt': build_goal_alignment_text(goal_alignment).encode('utf-8'),
         'historical_shadow_backfill_summary.json': json.dumps(backfill, indent=2).encode('utf-8'),
+        'historical_replay_shadow_summary.json': json.dumps(replay_summary, indent=2).encode('utf-8'),
         'checkpoint_decision_summary.json': json.dumps(checkpoint_summary, indent=2).encode('utf-8'),
         'historical_shadow_daily_rollup.csv': shadow_pack.get('overstrictness_shadow_daily_rollup.csv', b''),
         'historical_shadow_profile_rollup.csv': shadow_pack.get('shadow_threshold_profile_rollup.csv', b''),
         'historical_shadow_promotion_readiness_rows.csv': shadow_pack.get('shadow_promotion_readiness_rows.csv', b''),
+        'historical_replay_shadow_daily_rollup.csv': replay_cached_files.get('historical_replay_shadow_daily_rollup.csv', b''),
+        'historical_replay_shadow_profile_rollup.csv': replay_cached_files.get('historical_replay_shadow_profile_rollup.csv', b''),
         'checkpoint_decision_scan_rows.csv': checkpoint_pack.get('checkpoint_decision_scan_rows.csv', b''),
         'report.md': '\n'.join(report_lines).encode('utf-8'),
     }
