@@ -1,11 +1,27 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import json
 from typing import Callable
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.config import save_settings_override
+
+
+def _render_text_snapshot(title: str, payload: object) -> str:
+    generated_at = datetime.now(timezone.utc).isoformat()
+    body = json.dumps(payload, indent=2, sort_keys=True, default=str)
+    return f"{title}\nGenerated at UTC: {generated_at}\n\n{body}\n"
+
+
+def _text_attachment(filename: str, title: str, payload: object) -> Response:
+    return Response(
+        content=_render_text_snapshot(title, payload),
+        media_type='text/plain; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename={filename}'},
+    )
 
 
 def register_admin_routes(
@@ -74,6 +90,31 @@ def register_admin_routes(
         )
         logs = read_recent_logs(runtime.settings)
         return safe_render(request, 'diagnostics.html', {'snapshot': snapshot, 'logs': logs})
+
+
+    @app.get('/diagnostics/config-snapshot.txt')
+    def diagnostics_config_snapshot() -> Response:
+        return _text_attachment(
+            'config_snapshot.txt',
+            'Config snapshot',
+            runtime.settings.public_snapshot(),
+        )
+
+    @app.get('/diagnostics/universe-snapshot.txt')
+    def diagnostics_universe_snapshot() -> Response:
+        from app.services.diagnostics import build_diagnostics_snapshot
+
+        snapshot = build_diagnostics_snapshot(
+            runtime.settings,
+            runtime.db,
+            runtime.alpaca,
+            scheduler_status=runtime.scheduler_status,
+        )
+        return _text_attachment(
+            'universe_snapshot.txt',
+            'Universe snapshot',
+            snapshot.get('universe_status', {}),
+        )
 
 
     @app.get('/diagnostics/live-confirmation-pack.zip')

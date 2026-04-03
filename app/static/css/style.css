@@ -74,3 +74,111 @@ pre.json, pre.logs { white-space: pre-wrap; background: #0b1120; border-radius: 
     .access-bar { padding: 0.9rem 1.5rem 1rem; }
     .access-bar__controls label { min-width: 100%; }
 }
+
+
+.button-link.secondary-button,
+.button-link.action-button.secondary-button {
+    background: transparent;
+    color: #e2e8f0;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.diagnostics-card {
+    overflow: hidden;
+}
+
+.diagnostics-hero {
+    display: grid;
+    grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+    margin-bottom: 1rem;
+}
+
+.diagnostics-hero__intro h2 {
+    margin-bottom: 0.5rem;
+}
+
+.diagnostics-action-groups {
+    display: grid;
+    gap: 1rem;
+}
+
+.action-group-card {
+    background: rgba(15, 23, 42, 0.58);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 14px;
+    padding: 0.9rem;
+}
+
+.action-group-card h3 {
+    margin: 0 0 0.75rem;
+    font-size: 0.98rem;
+}
+
+.action-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+
+.action-grid--compact {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 280px));
+}
+
+.action-form {
+    display: block;
+}
+
+.action-button {
+    width: 100%;
+    min-height: 48px;
+    text-align: center;
+    line-height: 1.25;
+}
+
+.action-button--inline {
+    width: auto;
+}
+
+.diagnostics-summary-grid {
+    margin-top: 0.5rem;
+}
+
+.card-header-with-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+}
+
+.card-header-with-actions h2 {
+    margin-bottom: 0.25rem;
+}
+
+.snapshot-card {
+    min-width: 0;
+}
+
+.snapshot-pre {
+    max-height: 420px;
+}
+
+@media (max-width: 1080px) {
+    .diagnostics-hero {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .card-header-with-actions,
+    .section-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .action-button--inline {
+        width: 100%;
+    }
+}

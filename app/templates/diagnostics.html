@@ -1,32 +1,42 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card">
-    <div class="section-header">
-        <div>
+<section class="card diagnostics-card">
+    <div class="diagnostics-hero">
+        <div class="diagnostics-hero__intro">
             <h2>Diagnostics</h2>
-            <p class="muted">Operational health, scheduler leadership, live-trust drift, and config snapshot.</p>
+            <p class="muted">Operational health, scheduler leadership, live-trust drift, config snapshot, universe snapshot, and the current machine decision state.</p>
         </div>
-        <div class="inline-actions">
-            <form method="post" action="/diagnostics/evaluate-live-outcomes{{ token_suffix }}">
-                <button type="submit">Evaluate live outcomes</button>
-            </form>
-            <form method="post" action="/diagnostics/refresh-universe{{ token_suffix }}">
-                <button type="submit">Refresh universe cache</button>
-            </form>
-            <a class="button-link" href="/scan/recent/export.zip?days=5&offsets=120,150">Download last 5 sessions · 120/150 scans</a>
-            <a class="button-link" href="/diagnostics/live-confirmation-pack.zip{{ token_suffix }}">Download live confirmation pack</a>
-            <a class="button-link" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Download decision bundle</a>
-            <a class="button-link" href="/diagnostics/stage2-sanity-pack.zip{{ token_suffix }}">Download stage-2 sanity pack</a>
-            <a class="button-link" href="/diagnostics/stage2-regression-pack.zip{{ token_suffix }}">Download stage-2 regression pack</a>
-            <a class="button-link" href="/diagnostics/checkpoint-decision-pack.zip{{ token_suffix }}">Download checkpoint decision pack</a>
-            <a class="button-link" href="/diagnostics/classifier-audit-pack.zip{{ token_suffix }}">Download classifier audit pack</a>
-            <a class="button-link" href="/diagnostics/outcome-adjudication-pack.zip{{ token_suffix }}">Download outcome adjudication pack</a>
-            <a class="button-link" href="/diagnostics/overstrictness-shadow-pack.zip{{ token_suffix }}">Download overstrictness shadow pack</a>
-            <a class="button-link" href="/diagnostics/shadow-promotion-pack.zip{{ token_suffix }}">Download shadow promotion pack</a>
-            <a class="button-link" href="/diagnostics/shadow-visual-review-pack.zip{{ token_suffix }}">Download shadow visual review pack</a>
+        <div class="diagnostics-action-groups">
+            <section class="action-group-card">
+                <h3>Operational actions</h3>
+                <div class="action-grid action-grid--compact">
+                    <form method="post" action="/diagnostics/evaluate-live-outcomes{{ token_suffix }}" class="action-form">
+                        <button type="submit" class="action-button">Evaluate live outcomes</button>
+                    </form>
+                    <form method="post" action="/diagnostics/refresh-universe{{ token_suffix }}" class="action-form">
+                        <button type="submit" class="action-button">Refresh universe cache</button>
+                    </form>
+                </div>
+            </section>
+            <section class="action-group-card">
+                <h3>Downloads</h3>
+                <div class="action-grid">
+                    <a class="button-link action-button" href="/scan/recent/export.zip?days=5&offsets=120,150">Last 5 sessions · 120/150 scans</a>
+                    <a class="button-link action-button" href="/diagnostics/live-confirmation-pack.zip{{ token_suffix }}">Live confirmation pack</a>
+                    <a class="button-link action-button" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Decision bundle</a>
+                    <a class="button-link action-button" href="/diagnostics/stage2-sanity-pack.zip{{ token_suffix }}">Stage-2 sanity pack</a>
+                    <a class="button-link action-button" href="/diagnostics/stage2-regression-pack.zip{{ token_suffix }}">Stage-2 regression pack</a>
+                    <a class="button-link action-button" href="/diagnostics/checkpoint-decision-pack.zip{{ token_suffix }}">Checkpoint decision pack</a>
+                    <a class="button-link action-button" href="/diagnostics/classifier-audit-pack.zip{{ token_suffix }}">Classifier audit pack</a>
+                    <a class="button-link action-button" href="/diagnostics/outcome-adjudication-pack.zip{{ token_suffix }}">Outcome adjudication pack</a>
+                    <a class="button-link action-button" href="/diagnostics/overstrictness-shadow-pack.zip{{ token_suffix }}">Overstrictness shadow pack</a>
+                    <a class="button-link action-button" href="/diagnostics/shadow-promotion-pack.zip{{ token_suffix }}">Shadow promotion pack</a>
+                    <a class="button-link action-button" href="/diagnostics/shadow-visual-review-pack.zip{{ token_suffix }}">Shadow visual review pack</a>
+                </div>
+            </section>
         </div>
     </div>
-    <div class="stats-grid">
+    <div class="stats-grid diagnostics-summary-grid">
         <div><span class="label">Environment</span><strong>{{ snapshot.app_env }}</strong></div>
         <div><span class="label">Trading mode</span><strong>{{ snapshot.trading_mode }}</strong></div>
         <div><span class="label">Latest trading day</span><strong>{{ snapshot.latest_trading_day }}</strong></div>
@@ -43,7 +53,7 @@
             <h2>Current decision state</h2>
             <p class="muted">Single-machine summary of the current evidence so you do not need to pull multiple packs just to know what the app thinks should happen next.</p>
         </div>
-        <a class="button-link" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Download decision bundle</a>
+        <a class="button-link action-button action-button--inline" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Download decision bundle</a>
     </div>
     <div class="stats-grid">
         <div><span class="label">Latest selected day</span><strong>{{ snapshot.decision_state.latest_selected_day or 'None' }}</strong></div>
@@ -120,14 +130,26 @@
 </section>
 {% endif %}
 
-<section class="grid two">
-    <div class="card">
-        <h2>Config snapshot</h2>
-        <pre class="json">{{ snapshot.config | tojson(indent=2) }}</pre>
+<section class="grid two diagnostics-json-grid">
+    <div class="card snapshot-card">
+        <div class="card-header-with-actions">
+            <div>
+                <h2>Config snapshot</h2>
+                <p class="muted small">Current public configuration used to run the scanner.</p>
+            </div>
+            <a class="button-link secondary-button action-button action-button--inline" href="/diagnostics/config-snapshot.txt{{ token_suffix }}">Download config .txt</a>
+        </div>
+        <pre class="json snapshot-pre">{{ snapshot.config | tojson(indent=2) }}</pre>
     </div>
-    <div class="card">
-        <h2>Universe snapshot</h2>
-        <pre class="json">{{ snapshot.universe_status | tojson(indent=2) }}</pre>
+    <div class="card snapshot-card">
+        <div class="card-header-with-actions">
+            <div>
+                <h2>Universe snapshot</h2>
+                <p class="muted small">Current universe status and tradable-count snapshot.</p>
+            </div>
+            <a class="button-link secondary-button action-button action-button--inline" href="/diagnostics/universe-snapshot.txt{{ token_suffix }}">Download universe .txt</a>
+        </div>
+        <pre class="json snapshot-pre">{{ snapshot.universe_status | tojson(indent=2) }}</pre>
     </div>
 </section>
 
