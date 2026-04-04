@@ -335,6 +335,26 @@ def register_admin_routes(
         )
 
 
+    @app.get('/diagnostics/weaker-checkpoint-gate-shadow-pack.zip')
+    def diagnostics_weaker_checkpoint_gate_shadow_pack() -> Response:
+        from app.services.evidence_pack import pack_to_zip_bytes
+        from app.services.weaker_checkpoint_gate_shadow_pack import build_weaker_checkpoint_gate_shadow_pack
+
+        content = pack_to_zip_bytes(
+            build_weaker_checkpoint_gate_shadow_pack(
+                runtime.settings,
+                runtime.db,
+                runtime.alpaca,
+                offsets=[120, 150],
+            )
+        )
+        return Response(
+            content=content,
+            media_type='application/zip',
+            headers={'Content-Disposition': 'attachment; filename=weaker_checkpoint_gate_shadow_pack_latest_day.zip'},
+        )
+
+
     @app.get('/diagnostics/overstrictness-shadow-pack.zip')
     def diagnostics_overstrictness_shadow_pack() -> Response:
         from app.services.evidence_pack import pack_to_zip_bytes
