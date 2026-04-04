@@ -1,0 +1,21 @@
+R2K v1.39.18 post-redeploy steps
+
+1. Redeploy the uploaded repo in Render.
+
+2. After the deploy finishes, open this in your browser and confirm the version is 1.39.18:
+https://YOUR-RENDER-APP-URL/healthz
+
+3. Open Diagnostics in the app.
+
+4. In the Downloads section, click:
+Replay checkpoint compatibility pack
+
+5. Wait for the ZIP to finish downloading. The first build can take a bit longer than a cached download.
+
+6. Upload that ZIP back into this chat.
+
+What to share back here
+- The downloaded file named like: replay_checkpoint_compatibility_pack_last_90_days.zip
+
+When it will be available
+- After the Render redeploy completes and the Diagnostics page is live on v1.39.18.
