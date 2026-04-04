@@ -59,13 +59,24 @@ def build_goal_alignment_summary(
     replay_gate_comparator = replay_gate.get('comparator')
     replay_gate_threshold = replay_gate.get('threshold_value')
     replay_gate_share = replay_gate.get('tradeable_share')
+    shadow_visual_review = dict(decision.get('shadow_visual_review') or {})
+    visual_summary = dict(shadow_visual_review.get('summary') or {})
+    visual_verdict_counts = dict(visual_summary.get('visual_review_verdict_counts') or {})
+    visual_selected_count = int(shadow_visual_review.get('selected_review_count') or visual_summary.get('selected_review_count') or 0)
+    visual_all_trend_biased = bool(shadow_visual_review.get('all_tradeable_but_trend_biased'))
 
     operating_posture = (
         f"Production, {settings.trading_mode}, live trading {'enabled' if settings.enable_live_trading else 'disabled'}, "
         f"{settings.alpaca_data_feed.upper()} data, scheduled checkpoints {', '.join(str(x) for x in settings.scheduled_offsets)} minutes."
     )
 
-    if (checkpoint_specific_replay_support or checkpoint_gate_shadow_test) and replay_profile and best_replay_offset_minutes > 0 and worst_replay_offset_minutes > 0:
+    if visual_all_trend_biased and visual_selected_count > 0:
+        pressure_point = (
+            'Thesis fidelity now looks like the clearest near-term pressure point: '
+            f'automated visual review marked all {visual_selected_count} reviewed rescues as trend-biased rather than clean range-cycling setups. '
+            'Do not treat raw tradeability alone as support for classifier softening.'
+        )
+    elif (checkpoint_specific_replay_support or checkpoint_gate_shadow_test) and replay_profile and best_replay_offset_minutes > 0 and worst_replay_offset_minutes > 0:
         pressure_point = (
             'Checkpoint-specific decay now looks like the clearest near-term pressure point: '
             f'{replay_profile.replace("_", " ")} is replay-supported at {best_replay_offset_minutes} minutes '
@@ -122,6 +133,10 @@ def build_goal_alignment_summary(
         what_matters_now.append(
             f'Evidence density is still thin ({clean_day_count} clean day{'s' if clean_day_count != 1 else ''}); accumulation matters more than tuning right now.'
         )
+    if visual_all_trend_biased and visual_selected_count > 0:
+        what_matters_now.append(
+            f'Automated visual review currently shows all {visual_selected_count} reviewed rescues were tradeable but trend-biased, not clean range-cycling setups. Keep live thresholds frozen and do not count that evidence as thesis-valid support for classifier softening.'
+        )
 
     frozen_now = [
         'Live threshold changes remain frozen until the automated promotion gate opens.',
@@ -138,7 +153,11 @@ def build_goal_alignment_summary(
         'The automated evidence begins pointing at a different bottleneck than the current strict structural classifier story.',
     ]
 
-    if readiness == 'eligible_for_narrow_live_trial':
+    if visual_all_trend_biased and visual_selected_count > 0:
+        overall_assessment = (
+            'The app is still not successful yet because the currently reviewed would-be rescues look tradeable only in a directional, trend-biased way rather than as clean range-cycling setups. The next move should tighten thesis fidelity in the machine state, not loosen live behavior.'
+        )
+    elif readiness == 'eligible_for_narrow_live_trial':
         overall_assessment = (
             'The app is in a promotion-ready state for a narrow controlled trial, but live thresholds should still change only via an explicit approval step.'
         )
@@ -195,6 +214,9 @@ def build_goal_alignment_summary(
         'historical_replay_weaker_checkpoint_gate_comparator': replay_gate_comparator,
         'historical_replay_weaker_checkpoint_gate_threshold': replay_gate_threshold,
         'historical_replay_weaker_checkpoint_gate_share': replay_gate_share,
+        'shadow_visual_review_selected_count': visual_selected_count,
+        'shadow_visual_review_verdict_counts': visual_verdict_counts,
+        'shadow_visual_review_all_tradeable_but_trend_biased': visual_all_trend_biased,
     }
 
 
@@ -241,5 +263,8 @@ def build_goal_alignment_text(summary: dict[str, Any]) -> str:
         'historical_replay_weaker_checkpoint_gate_comparator': summary.get('historical_replay_weaker_checkpoint_gate_comparator'),
         'historical_replay_weaker_checkpoint_gate_threshold': summary.get('historical_replay_weaker_checkpoint_gate_threshold'),
         'historical_replay_weaker_checkpoint_gate_share': summary.get('historical_replay_weaker_checkpoint_gate_share'),
+        'shadow_visual_review_selected_count': summary.get('shadow_visual_review_selected_count'),
+        'shadow_visual_review_verdict_counts': summary.get('shadow_visual_review_verdict_counts'),
+        'shadow_visual_review_all_tradeable_but_trend_biased': summary.get('shadow_visual_review_all_tradeable_but_trend_biased'),
     }, indent=2)])
     return '\n'.join(lines).strip() + '\n'

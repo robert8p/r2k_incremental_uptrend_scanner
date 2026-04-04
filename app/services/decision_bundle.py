@@ -14,6 +14,7 @@ from app.repositories import RepositoryBundle, ensure_repository_bundle
 from app.services.checkpoint_decision_surface import build_checkpoint_decision_pack, build_checkpoint_decision_surface
 from app.services.evidence_pack import pack_to_zip_bytes
 from app.services.goal_alignment import build_goal_alignment_summary, build_goal_alignment_text
+from app.services.shadow_visual_review_pack import build_shadow_visual_review_pack
 from app.services.replay_bottleneck_pack import build_replay_bottleneck_pack
 from app.services.historical_replay_shadow_pack import (
     read_cached_historical_replay_summary,
@@ -139,6 +140,47 @@ def _historical_replay_summary_from_cache(summary: dict[str, Any] | None, *, loo
 
 
 
+
+def _summarize_visual_review(summary: dict[str, Any] | None) -> dict[str, Any]:
+    payload = dict(summary or {})
+    verdict_counts = dict(payload.get('visual_review_verdict_counts') or {})
+    selected_count = _to_int(payload.get('selected_review_count'))
+    trend_biased = _to_int(verdict_counts.get('tradeable_but_trend_biased'))
+    clean_range = _to_int(verdict_counts.get('clean_range_cycler'))
+    supports_range = clean_range > 0
+    thesis_misaligned = selected_count > 0 and trend_biased == selected_count and clean_range == 0
+    return {
+        'available': bool(payload),
+        'best_profile_name': payload.get('best_profile_name'),
+        'selected_review_count': selected_count,
+        'visual_review_verdict_counts': verdict_counts,
+        'all_tradeable_but_trend_biased': thesis_misaligned,
+        'supports_range_cycling_thesis': supports_range,
+        'trend_biased_share': (float(trend_biased) / float(selected_count)) if selected_count > 0 else None,
+        'summary': payload,
+    }
+
+
+def _apply_visual_review_guardrail(backfill: dict[str, Any], visual_review: dict[str, Any]) -> dict[str, Any]:
+    adjusted = dict(backfill or {})
+    if not visual_review.get('available'):
+        return adjusted
+    adjusted['shadow_visual_review'] = visual_review
+    if (
+        visual_review.get('all_tradeable_but_trend_biased')
+        and visual_review.get('best_profile_name')
+        and str(visual_review.get('best_profile_name')) == str(adjusted.get('best_shadow_profile') or '')
+    ):
+        adjusted['overall_promotion_readiness'] = 'visual_review_flags_thesis_misalignment'
+        adjusted['overall_reason'] = (
+            f"Best profile={adjusted.get('best_shadow_profile')}, but all {visual_review.get('selected_review_count')} "
+            "reviewed would-be rescues were tradeable only in a trend-biased way rather than as clean range-cycling setups."
+        )
+        adjusted['best_shadow_profile_verdict'] = 'visual_review_flags_thesis_misalignment'
+    return adjusted
+
+
+
 def _decision_recommendation(
     *,
     replay_summary: dict[str, Any],
@@ -148,6 +190,7 @@ def _decision_recommendation(
     clean_day_count: int,
     current_valid_now_count: int,
     regressed_count: int,
+    visual_review: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     replay_verdict = str(replay_summary.get('overall_verdict') or '')
     replay_profile = ((replay_summary.get('recommended_profile') or {}) or {}).get('profile_name')
@@ -163,6 +206,14 @@ def _decision_recommendation(
     best_gate = dict(compatibility.get('best_gate_weaker_offset_only') or {}) or dict(compatibility.get('best_gate_weaker_offset_total') or {})
     best_gate_reaches_support = bool(best_gate.get('reaches_support_threshold'))
     readiness = str(promotion_readiness or 'insufficient_evidence')
+    visual = dict(visual_review or {})
+    if visual.get('all_tradeable_but_trend_biased'):
+        selected_count = _to_int(visual.get('selected_review_count'))
+        best_profile_name = str(visual.get('best_profile_name') or replay_profile or 'the current shadow profile')
+        return (
+            'shadow_visual_review_flags_thesis_misalignment_hold_live_behavior',
+            f'Automated visual review now shows all {selected_count} reviewed {best_profile_name} shadow rescues were tradeable only in a trend-biased way rather than as clean range-cycling setups. Keep live behavior frozen and do not treat classifier-softening evidence for that profile as thesis-valid support yet.',
+        )
     if readiness == 'eligible_for_narrow_live_trial':
         return (
             'eligible_for_narrow_live_trial',
@@ -293,6 +344,9 @@ def build_decision_state(
     repos = ensure_repository_bundle(db)
     shadow_pack = build_shadow_promotion_pack(settings, repos, alpaca, days=days, offsets=requested_offsets)
     backfill = _backfill_summary_from_shadow_pack(shadow_pack, days=days, offsets=requested_offsets)
+    visual_review_pack = build_shadow_visual_review_pack(settings, repos, alpaca, days=min(int(days), 10), offsets=requested_offsets)
+    visual_review_summary = _summarize_visual_review(_read_json_bytes(visual_review_pack.get('shadow_visual_review_summary.json', b'')))
+    backfill = _apply_visual_review_guardrail(backfill, visual_review_summary)
     checkpoint_surface = build_checkpoint_decision_surface(settings, repos, offsets=requested_offsets)
     checkpoint_summary = dict(checkpoint_surface.get('summary') or {})
     live_trust = build_live_trust_snapshot(settings, repos.db)
@@ -325,6 +379,7 @@ def build_decision_state(
         clean_day_count=_to_int(backfill.get('clean_day_count')),
         current_valid_now_count=_to_int(checkpoint_summary.get('currently_valid_now_count')),
         regressed_count=_to_int(checkpoint_summary.get('regressed_after_earlier_validity_count')),
+        visual_review=visual_review_summary,
     )
     return {
         'generated_at_utc': datetime.now(UTC).isoformat(),
@@ -348,6 +403,7 @@ def build_decision_state(
         'historical_replay_shadow': replay_summary,
         'historical_replay_bottleneck': replay_bottleneck_summary,
         'historical_replay_checkpoint_compatibility': replay_checkpoint_compatibility_summary,
+        'shadow_visual_review': visual_review_summary,
         'historical_shadow_backfill': backfill,
         'checkpoint_summary': checkpoint_summary,
         'live_trust_latest_research_run_id': live_trust.get('latest_research_run_id'),
@@ -390,6 +446,7 @@ def build_decision_bundle_pack(
     replay_summary = dict(decision_state.get('historical_replay_shadow') or {})
     replay_bottleneck_summary = dict(decision_state.get('historical_replay_bottleneck') or {})
     replay_checkpoint_compatibility_summary = dict(decision_state.get('historical_replay_checkpoint_compatibility') or {})
+    shadow_visual_review_summary = dict((decision_state.get('shadow_visual_review') or {}).get('summary') or {})
     replay_cached_files = _extract_cached_replay_files(settings)
     checkpoint_summary = dict(decision_state.get('checkpoint_summary') or {})
     try:
@@ -431,11 +488,17 @@ def build_decision_bundle_pack(
         f"- Replay checkpoint split worst offset share: {((replay_bottleneck_summary.get('worst_offset_by_tradeable_share') or {}) or {}).get('tradeable_share')}",
         f"- Replay weaker-checkpoint best gate metric: {((replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_only') or {}) or {}).get('metric_name') or ((replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_total') or {}) or {}).get('metric_name')}",
         f"- Replay weaker-checkpoint best gate threshold: {((replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_only') or {}) or {}).get('threshold_value') if (replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_only') or {}) else ((replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_total') or {}) or {}).get('threshold_value')}",
+        '',
+        '## Shadow visual review',
+        f"- Available: {bool(shadow_visual_review_summary)}",
+        f"- Best profile: {shadow_visual_review_summary.get('best_profile_name')}",
+        f"- Selected review count: {shadow_visual_review_summary.get('selected_review_count')}",
+        f"- Visual verdict counts: {shadow_visual_review_summary.get('visual_review_verdict_counts')}",
     ]
 
     manifest = {
         'bundle_type': 'decision_bundle',
-        'bundle_contract_version': '1.2',
+        'bundle_contract_version': '1.3',
         'app_version': VERSION,
         'generated_at_utc': decision_state['generated_at_utc'],
         'days_requested': int(days),
@@ -455,6 +518,7 @@ def build_decision_bundle_pack(
         'historical_replay_shadow_summary.json': json.dumps(replay_summary, indent=2).encode('utf-8'),
         'historical_replay_bottleneck_summary.json': json.dumps(replay_bottleneck_summary, indent=2).encode('utf-8'),
         'historical_replay_checkpoint_compatibility_summary.json': json.dumps(replay_checkpoint_compatibility_summary, indent=2).encode('utf-8'),
+        'shadow_visual_review_summary.json': json.dumps(shadow_visual_review_summary, indent=2).encode('utf-8'),
         'checkpoint_decision_summary.json': json.dumps(checkpoint_summary, indent=2).encode('utf-8'),
         'historical_shadow_daily_rollup.csv': shadow_pack.get('overstrictness_shadow_daily_rollup.csv', b''),
         'historical_shadow_profile_rollup.csv': shadow_pack.get('shadow_threshold_profile_rollup.csv', b''),

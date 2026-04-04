@@ -1,0 +1,9 @@
+1. Confirm /healthz shows 1.39.22.
+2. Download /diagnostics/decision-bundle.zip?token=YOUR_AUTH_TOKEN.
+3. Upload that decision bundle here.
+
+What I will check first:
+- app_version = 1.39.22
+- decision_recommendation_code = shadow_visual_review_flags_thesis_misalignment_hold_live_behavior
+- overall_promotion_readiness = visual_review_flags_thesis_misalignment
+- shadow_visual_review_summary.json is included in the bundle
