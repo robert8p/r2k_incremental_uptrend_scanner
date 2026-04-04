@@ -87,6 +87,7 @@ def test_build_decision_bundle_pack_includes_backfill_and_decision_state(monkeyp
     monkeypatch.setattr('app.services.decision_bundle.build_checkpoint_decision_surface', lambda *args, **kwargs: checkpoint_surface)
     monkeypatch.setattr('app.services.decision_bundle.build_live_trust_snapshot', lambda *args, **kwargs: {'latest_research_run_id': 42})
     monkeypatch.setattr('app.services.decision_bundle.read_cached_historical_replay_summary', lambda settings: {'overall_verdict': 'historical_replay_supports_candidate_profile', 'recommended_profile': {'profile_name': 'soft_bounce_quality'}, 'trading_day_count': 60})
+    monkeypatch.setattr('app.services.decision_bundle.build_replay_bottleneck_pack', lambda *args, **kwargs: {'replay_bottleneck_summary.json': json.dumps({'best_offset_by_tradeable_share': {'scan_offset_minutes': 120, 'tradeable_share': 0.55}, 'worst_offset_by_tradeable_share': {'scan_offset_minutes': 150, 'tradeable_share': 0.41}, 'tradeable_share_support_threshold': 0.5}).encode('utf-8')})
     monkeypatch.setattr('app.services.decision_bundle.read_cached_historical_replay_zip', lambda settings: None)
 
     pack = build_decision_bundle_pack(settings, object(), DummyAlpaca(), days=60, offsets=[120, 150])
@@ -99,7 +100,62 @@ def test_build_decision_bundle_pack_includes_backfill_and_decision_state(monkeyp
     assert summary['latest_selected_day'] == '2026-04-02'
     assert summary['decision_recommendation_code'] == 'historical_replay_supports_candidate_profile_hold_live_gate'
     assert summary['historical_replay_shadow']['overall_verdict'] == 'historical_replay_supports_candidate_profile'
+    assert summary['historical_replay_bottleneck']['best_offset_by_tradeable_share']['scan_offset_minutes'] == 120
     assert backfill['clean_day_count'] == 3
+
+
+def test_build_decision_state_marks_checkpoint_specific_replay_candidate(monkeypatch, tmp_path):
+    settings = Settings(data_dir=str(tmp_path), database_path=str(tmp_path / 'bundle.db'))
+
+    shadow_summary = {
+        'source_clean_day_count': 1,
+        'overall_promotion_readiness': 'shadow_profile_promising_but_early',
+        'overall_reason': 'Profile looks promising but still early.',
+        'recommended_profile': {
+            'profile_name': 'soft_bounce_quality',
+            'promotion_readiness_verdict': 'shadow_profile_promising_but_early',
+            'flagged_possible_classifier_overstrict': 4,
+            'flagged_classifier_correct_reject': 0,
+            'precision_like_overstrict_share': 1.0,
+        },
+        'source_verdict_counts': {'possible_classifier_overstrict': 4, 'classifier_correct_reject': 2},
+    }
+    shadow_pack = {
+        'shadow_promotion_summary.json': json.dumps(shadow_summary).encode('utf-8'),
+        'shadow_promotion_readiness_rows.csv': _csv_bytes([
+            {'profile_name': 'soft_bounce_quality', 'promotion_readiness_verdict': 'shadow_profile_promising_but_early'}
+        ]),
+        'overstrictness_shadow_daily_rollup.csv': _csv_bytes([
+            {'trading_day': '2026-04-02', 'scan_offset_minutes': 120, 'verdict_bucket': 'possible_classifier_overstrict', 'count': 2}
+        ]),
+        'shadow_threshold_profile_rollup.csv': _csv_bytes([
+            {'profile_name': 'soft_bounce_quality', 'flagged_total': 4, 'flagged_possible_classifier_overstrict': 4, 'flagged_classifier_correct_reject': 0}
+        ]),
+    }
+    checkpoint_surface = {
+        'summary': {
+            'selected_day': '2026-04-02',
+            'currently_valid_now_count': 0,
+            'regressed_after_earlier_validity_count': 0,
+            'best_checkpoint_offset_minutes': 120,
+            'max_stage2_count_any_checkpoint': 0,
+            'surface_message': 'No current names.',
+        }
+    }
+
+    monkeypatch.setattr('app.services.decision_bundle.build_shadow_promotion_pack', lambda *args, **kwargs: shadow_pack)
+    monkeypatch.setattr('app.services.decision_bundle.build_checkpoint_decision_surface', lambda *args, **kwargs: checkpoint_surface)
+    monkeypatch.setattr('app.services.decision_bundle.build_live_trust_snapshot', lambda *args, **kwargs: {'latest_research_run_id': 42})
+    monkeypatch.setattr('app.services.decision_bundle.read_cached_historical_replay_summary', lambda settings: {'available': True, 'overall_verdict': 'historical_replay_no_clear_candidate', 'recommended_profile': {'profile_name': 'soft_cycle_durability'}, 'trading_day_count': 80})
+    monkeypatch.setattr('app.services.decision_bundle.build_replay_bottleneck_pack', lambda *args, **kwargs: {'replay_bottleneck_summary.json': json.dumps({'best_offset_by_tradeable_share': {'scan_offset_minutes': 120, 'tradeable_share': 0.5375}, 'worst_offset_by_tradeable_share': {'scan_offset_minutes': 150, 'tradeable_share': 0.4302}, 'tradeable_share_support_threshold': 0.5}).encode('utf-8')})
+
+    from app.services.decision_bundle import build_decision_state
+    summary = build_decision_state(settings, object(), DummyAlpaca(), days=60, offsets=[120, 150])
+
+    assert summary['decision_recommendation_code'] == 'historical_replay_supports_checkpoint_specific_candidate_hold_live_gate'
+    assert '120-minute checkpoint clears the replay support bar' in summary['decision_recommendation_message']
+    assert summary['historical_replay_bottleneck']['best_offset_by_tradeable_share']['scan_offset_minutes'] == 120
+
 
 
 def test_get_or_build_decision_state_returns_fallback_without_credentials(tmp_path):

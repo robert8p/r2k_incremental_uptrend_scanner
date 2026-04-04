@@ -67,6 +67,7 @@ def test_goal_alignment_summary_highlights_current_phase():
             'regressed_after_earlier_validity_count': 2,
             'latest_selected_day': '2026-04-02',
             'historical_replay_shadow': {'available': True, 'overall_verdict': 'historical_replay_supports_candidate_profile', 'recommended_profile': {'profile_name': 'soft_bounce_quality'}, 'trading_day_count': 60},
+            'historical_replay_bottleneck': {'best_offset_by_tradeable_share': {'scan_offset_minutes': 120, 'tradeable_share': 0.55}, 'worst_offset_by_tradeable_share': {'scan_offset_minutes': 150, 'tradeable_share': 0.41}},
         },
     )
     assert summary['best_shadow_profile'] == 'soft_bounce_quality'
@@ -76,6 +77,40 @@ def test_goal_alignment_summary_highlights_current_phase():
     text = build_goal_alignment_text(summary)
     assert 'Goal alignment readout' in text
     assert 'What would justify change' in text
+
+
+def test_goal_alignment_summary_highlights_checkpoint_specific_replay_support():
+    settings = Settings(
+        app_env='production',
+        trading_mode='scan_only',
+        enable_live_trading=False,
+        alpaca_data_feed='sip',
+        scheduled_scan_offsets='120,150',
+    )
+    summary = build_goal_alignment_summary(
+        settings,
+        universe_status={'tradable_count': 1921},
+        decision_state={
+            'clean_day_count': 1,
+            'best_shadow_profile': 'soft_bounce_quality',
+            'overall_promotion_readiness': 'shadow_profile_promising_but_early',
+            'decision_recommendation_code': 'historical_replay_supports_checkpoint_specific_candidate_hold_live_gate',
+            'currently_valid_now_count': 0,
+            'regressed_after_earlier_validity_count': 0,
+            'latest_selected_day': '2026-04-02',
+            'historical_replay_shadow': {'available': True, 'overall_verdict': 'historical_replay_no_clear_candidate', 'recommended_profile': {'profile_name': 'soft_cycle_durability'}, 'trading_day_count': 80},
+            'historical_replay_bottleneck': {
+                'best_offset_by_tradeable_share': {'scan_offset_minutes': 120, 'tradeable_share': 0.5375},
+                'worst_offset_by_tradeable_share': {'scan_offset_minutes': 150, 'tradeable_share': 0.4302},
+            },
+        },
+    )
+    assert 'Checkpoint-specific decay' in summary['likely_future_pressure_point']
+    assert any('120-minute checkpoint' in item for item in summary['what_matters_now'])
+    assert summary['historical_replay_best_supported_offset_minutes'] == 120
+    text = build_goal_alignment_text(summary)
+    assert 'historical_replay_best_supported_offset_minutes' in text
+
 
 
 def test_diagnostics_page_renders_goal_alignment_block_and_download(monkeypatch):
@@ -158,6 +193,10 @@ def test_goal_alignment_text_download_returns_plain_text(monkeypatch):
                 'historical_replay_best_profile': 'soft_bounce_quality',
                 'historical_replay_overall_verdict': 'historical_replay_supports_candidate_profile',
                 'historical_replay_trading_day_count': 60,
+                'historical_replay_best_supported_offset_minutes': 120,
+                'historical_replay_best_supported_offset_share': 0.55,
+                'historical_replay_worst_offset_minutes': 150,
+                'historical_replay_worst_offset_share': 0.41,
             }
         },
     )
@@ -221,6 +260,7 @@ def test_decision_bundle_pack_includes_goal_alignment_files(monkeypatch, tmp_pat
     monkeypatch.setattr('app.services.decision_bundle.build_checkpoint_decision_surface', lambda *args, **kwargs: checkpoint_surface)
     monkeypatch.setattr('app.services.decision_bundle.build_live_trust_snapshot', lambda *args, **kwargs: {'latest_research_run_id': 42})
     monkeypatch.setattr('app.services.decision_bundle.read_cached_historical_replay_summary', lambda settings: {'overall_verdict': 'historical_replay_supports_candidate_profile', 'recommended_profile': {'profile_name': 'soft_bounce_quality'}, 'trading_day_count': 60})
+    monkeypatch.setattr('app.services.decision_bundle.build_replay_bottleneck_pack', lambda *args, **kwargs: {'replay_bottleneck_summary.json': json.dumps({'best_offset_by_tradeable_share': {'scan_offset_minutes': 120, 'tradeable_share': 0.55}, 'worst_offset_by_tradeable_share': {'scan_offset_minutes': 150, 'tradeable_share': 0.41}, 'tradeable_share_support_threshold': 0.5}).encode('utf-8')})
     monkeypatch.setattr('app.services.decision_bundle.read_cached_historical_replay_zip', lambda settings: None)
     monkeypatch.setattr('app.services.universe.load_universe', lambda *args, **kwargs: {'status': {'tradable_count': 1921}})
 
