@@ -86,6 +86,7 @@ def test_diagnostics_page_renders_grouped_actions_and_text_snapshot_buttons(monk
     assert 'Operational actions' in body
     assert 'Downloads' in body
     assert 'Historical replay shadow pack' in body
+    assert 'Replay bottleneck pack' in body
     assert 'Download config .txt' in body
     assert 'Download universe .txt' in body
     assert 'Config snapshot' in body
