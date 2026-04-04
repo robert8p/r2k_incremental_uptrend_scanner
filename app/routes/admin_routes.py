@@ -273,6 +273,26 @@ def register_admin_routes(
             headers={'Content-Disposition': 'attachment; filename=historical_replay_shadow_pack_last_90_days.zip'},
         )
 
+    @app.get('/diagnostics/replay-bottleneck-pack.zip')
+    def diagnostics_replay_bottleneck_pack() -> Response:
+        from app.services.evidence_pack import pack_to_zip_bytes
+        from app.services.replay_bottleneck_pack import build_replay_bottleneck_pack
+
+        content = pack_to_zip_bytes(
+            build_replay_bottleneck_pack(
+                runtime.settings,
+                runtime.db,
+                runtime.alpaca,
+                lookback_days=90,
+                offsets=[120, 150],
+            )
+        )
+        return Response(
+            content=content,
+            media_type='application/zip',
+            headers={'Content-Disposition': 'attachment; filename=replay_bottleneck_pack_last_90_days.zip'},
+        )
+
 
     @app.get('/diagnostics/overstrictness-shadow-pack.zip')
     def diagnostics_overstrictness_shadow_pack() -> Response:
