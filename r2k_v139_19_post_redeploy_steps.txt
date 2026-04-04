@@ -1,0 +1,24 @@
+After Render finishes redeploying v1.39.19:
+
+1. Open:
+   /healthz
+   Confirm the version says 1.39.19.
+
+2. Download a fresh decision bundle:
+   /diagnostics/decision-bundle.zip?token=YOUR_AUTH_TOKEN
+
+3. Upload that downloaded ZIP back into the chat.
+
+What to share:
+- the fresh decision bundle ZIP
+
+When it will be available:
+- after the v1.39.19 redeploy completes
+- then immediately after downloading /diagnostics/decision-bundle.zip
+
+What I will check first:
+- app_version is 1.39.19
+- decision_recommendation_code becomes:
+  historical_replay_supports_weaker_checkpoint_gate_shadow_test_hold_live_gate
+- decision_recommendation_message explicitly mentions the weaker-checkpoint gate candidate
+- historical_replay_checkpoint_compatibility is present in the bundle

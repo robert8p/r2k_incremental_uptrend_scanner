@@ -20,6 +20,7 @@ from app.services.historical_replay_shadow_pack import (
     read_cached_historical_replay_zip,
 )
 from app.services.live_trust import build_live_trust_snapshot
+from app.services.replay_checkpoint_compatibility_pack import build_replay_checkpoint_compatibility_pack
 from app.services.shadow_promotion_pack import build_shadow_promotion_pack
 from app.version import VERSION
 
@@ -142,6 +143,7 @@ def _decision_recommendation(
     *,
     replay_summary: dict[str, Any],
     replay_bottleneck_summary: dict[str, Any] | None,
+    replay_checkpoint_compatibility_summary: dict[str, Any] | None,
     promotion_readiness: str | None,
     clean_day_count: int,
     current_valid_now_count: int,
@@ -150,6 +152,7 @@ def _decision_recommendation(
     replay_verdict = str(replay_summary.get('overall_verdict') or '')
     replay_profile = ((replay_summary.get('recommended_profile') or {}) or {}).get('profile_name')
     bottleneck = dict(replay_bottleneck_summary or {})
+    compatibility = dict(replay_checkpoint_compatibility_summary or {})
     best_offset = dict(bottleneck.get('best_offset_by_tradeable_share') or {})
     best_offset_minutes = _to_int(best_offset.get('scan_offset_minutes'))
     best_offset_share = best_offset.get('tradeable_share')
@@ -157,6 +160,8 @@ def _decision_recommendation(
     worst_offset_minutes = _to_int(worst_offset.get('scan_offset_minutes'))
     worst_offset_share = worst_offset.get('tradeable_share')
     support_threshold = bottleneck.get('tradeable_share_support_threshold')
+    best_gate = dict(compatibility.get('best_gate_weaker_offset_only') or {}) or dict(compatibility.get('best_gate_weaker_offset_total') or {})
+    best_gate_reaches_support = bool(best_gate.get('reaches_support_threshold'))
     readiness = str(promotion_readiness or 'insufficient_evidence')
     if readiness == 'eligible_for_narrow_live_trial':
         return (
@@ -170,6 +175,17 @@ def _decision_recommendation(
         )
     if replay_profile and best_offset_minutes > 0 and _to_float(best_offset_share) is not None and (_to_float(best_offset_share) or 0.0) >= (_to_float(support_threshold) or 0.5):
         best_share_text = f"{(_to_float(best_offset_share) or 0.0):.4f}"
+        if best_gate_reaches_support and worst_offset_minutes > 0 and _to_float(worst_offset_share) is not None:
+            worst_share_text = f"{(_to_float(worst_offset_share) or 0.0):.4f}"
+            gate_metric = str(best_gate.get('metric_name') or 'unknown_metric')
+            gate_comparator = str(best_gate.get('comparator') or '>=')
+            gate_threshold = best_gate.get('threshold_value')
+            gate_share_text = f"{(_to_float(best_gate.get('tradeable_share')) or 0.0):.4f}"
+            gate_scope = str(best_gate.get('scope_name') or 'weaker_offset_only')
+            return (
+                'historical_replay_supports_weaker_checkpoint_gate_shadow_test_hold_live_gate',
+                f'Historical replay supports {replay_profile} at the {best_offset_minutes}-minute checkpoint ({best_share_text}), while the {worst_offset_minutes}-minute checkpoint remains weaker ({worst_share_text}). Compatibility analysis now surfaces a scan-time-only weaker-checkpoint gate candidate worth shadow testing: {gate_metric} {gate_comparator} {gate_threshold} on {gate_scope} reaches {gate_share_text}. Keep live behavior frozen and use the next tranche to run a narrow weaker-checkpoint gate shadow test, not a live threshold change.',
+            )
         if worst_offset_minutes > 0 and _to_float(worst_offset_share) is not None:
             worst_share_text = f"{(_to_float(worst_offset_share) or 0.0):.4f}"
             return (
@@ -212,6 +228,7 @@ def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int
     recommendation_code, recommendation_message = _decision_recommendation(
         replay_summary=replay_summary,
         replay_bottleneck_summary=None,
+        replay_checkpoint_compatibility_summary=None,
         promotion_readiness='insufficient_runtime_context',
         clean_day_count=0,
         current_valid_now_count=0,
@@ -238,6 +255,7 @@ def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int
         'evidence_engine': 'historical_replay_primary_live_gate_secondary',
         'historical_replay_shadow': replay_summary,
         'historical_replay_bottleneck': {},
+        'historical_replay_checkpoint_compatibility': {},
         'historical_shadow_backfill': {
             'bundle_type': 'historical_shadow_backfill',
             'days_requested': int(days),
@@ -291,9 +309,18 @@ def build_decision_state(
         offsets=requested_offsets,
     ) if replay_summary.get('available') else {}
     replay_bottleneck_summary = _read_json_bytes(replay_bottleneck_pack.get('replay_bottleneck_summary.json', b''))
+    replay_checkpoint_compatibility_pack = build_replay_checkpoint_compatibility_pack(
+        settings,
+        repos,
+        alpaca,
+        lookback_days=DEFAULT_REPLAY_LOOKBACK_DAYS,
+        offsets=requested_offsets,
+    ) if replay_summary.get('available') else {}
+    replay_checkpoint_compatibility_summary = _read_json_bytes(replay_checkpoint_compatibility_pack.get('replay_checkpoint_compatibility_summary.json', b''))
     recommendation_code, recommendation_message = _decision_recommendation(
         replay_summary=replay_summary,
         replay_bottleneck_summary=replay_bottleneck_summary,
+        replay_checkpoint_compatibility_summary=replay_checkpoint_compatibility_summary,
         promotion_readiness=str(backfill.get('overall_promotion_readiness') or ''),
         clean_day_count=_to_int(backfill.get('clean_day_count')),
         current_valid_now_count=_to_int(checkpoint_summary.get('currently_valid_now_count')),
@@ -320,6 +347,7 @@ def build_decision_state(
         'evidence_engine': 'historical_replay_primary_live_gate_secondary',
         'historical_replay_shadow': replay_summary,
         'historical_replay_bottleneck': replay_bottleneck_summary,
+        'historical_replay_checkpoint_compatibility': replay_checkpoint_compatibility_summary,
         'historical_shadow_backfill': backfill,
         'checkpoint_summary': checkpoint_summary,
         'live_trust_latest_research_run_id': live_trust.get('latest_research_run_id'),
@@ -361,6 +389,7 @@ def build_decision_bundle_pack(
     backfill = dict(decision_state.get('historical_shadow_backfill') or {})
     replay_summary = dict(decision_state.get('historical_replay_shadow') or {})
     replay_bottleneck_summary = dict(decision_state.get('historical_replay_bottleneck') or {})
+    replay_checkpoint_compatibility_summary = dict(decision_state.get('historical_replay_checkpoint_compatibility') or {})
     replay_cached_files = _extract_cached_replay_files(settings)
     checkpoint_summary = dict(decision_state.get('checkpoint_summary') or {})
     try:
@@ -400,6 +429,8 @@ def build_decision_bundle_pack(
         f"- Replay checkpoint split best offset share: {((replay_bottleneck_summary.get('best_offset_by_tradeable_share') or {}) or {}).get('tradeable_share')}",
         f"- Replay checkpoint split worst offset: {((replay_bottleneck_summary.get('worst_offset_by_tradeable_share') or {}) or {}).get('scan_offset_minutes')}",
         f"- Replay checkpoint split worst offset share: {((replay_bottleneck_summary.get('worst_offset_by_tradeable_share') or {}) or {}).get('tradeable_share')}",
+        f"- Replay weaker-checkpoint best gate metric: {((replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_only') or {}) or {}).get('metric_name') or ((replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_total') or {}) or {}).get('metric_name')}",
+        f"- Replay weaker-checkpoint best gate threshold: {((replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_only') or {}) or {}).get('threshold_value') if (replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_only') or {}) else ((replay_checkpoint_compatibility_summary.get('best_gate_weaker_offset_total') or {}) or {}).get('threshold_value')}",
     ]
 
     manifest = {
@@ -423,6 +454,7 @@ def build_decision_bundle_pack(
         'historical_shadow_backfill_summary.json': json.dumps(backfill, indent=2).encode('utf-8'),
         'historical_replay_shadow_summary.json': json.dumps(replay_summary, indent=2).encode('utf-8'),
         'historical_replay_bottleneck_summary.json': json.dumps(replay_bottleneck_summary, indent=2).encode('utf-8'),
+        'historical_replay_checkpoint_compatibility_summary.json': json.dumps(replay_checkpoint_compatibility_summary, indent=2).encode('utf-8'),
         'checkpoint_decision_summary.json': json.dumps(checkpoint_summary, indent=2).encode('utf-8'),
         'historical_shadow_daily_rollup.csv': shadow_pack.get('overstrictness_shadow_daily_rollup.csv', b''),
         'historical_shadow_profile_rollup.csv': shadow_pack.get('shadow_threshold_profile_rollup.csv', b''),

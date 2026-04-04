@@ -41,6 +41,7 @@ def build_goal_alignment_summary(
     regressed_count = int(decision.get('regressed_after_earlier_validity_count') or 0)
     replay_summary = dict(decision.get('historical_replay_shadow') or {})
     replay_bottleneck = dict(decision.get('historical_replay_bottleneck') or {})
+    replay_compatibility = dict(decision.get('historical_replay_checkpoint_compatibility') or {})
     replay_available = bool(replay_summary.get('available'))
     replay_profile = ((replay_summary.get('recommended_profile') or {}) or {}).get('profile_name')
     replay_verdict = str(replay_summary.get('overall_verdict') or '')
@@ -52,13 +53,19 @@ def build_goal_alignment_summary(
     best_replay_offset_share = best_replay_offset.get('tradeable_share')
     worst_replay_offset_share = worst_replay_offset.get('tradeable_share')
     checkpoint_specific_replay_support = recommendation == 'historical_replay_supports_checkpoint_specific_candidate_hold_live_gate'
+    checkpoint_gate_shadow_test = recommendation == 'historical_replay_supports_weaker_checkpoint_gate_shadow_test_hold_live_gate'
+    replay_gate = dict(replay_compatibility.get('best_gate_weaker_offset_only') or {}) or dict(replay_compatibility.get('best_gate_weaker_offset_total') or {})
+    replay_gate_metric = replay_gate.get('metric_name')
+    replay_gate_comparator = replay_gate.get('comparator')
+    replay_gate_threshold = replay_gate.get('threshold_value')
+    replay_gate_share = replay_gate.get('tradeable_share')
 
     operating_posture = (
         f"Production, {settings.trading_mode}, live trading {'enabled' if settings.enable_live_trading else 'disabled'}, "
         f"{settings.alpaca_data_feed.upper()} data, scheduled checkpoints {', '.join(str(x) for x in settings.scheduled_offsets)} minutes."
     )
 
-    if checkpoint_specific_replay_support and replay_profile and best_replay_offset_minutes > 0 and worst_replay_offset_minutes > 0:
+    if (checkpoint_specific_replay_support or checkpoint_gate_shadow_test) and replay_profile and best_replay_offset_minutes > 0 and worst_replay_offset_minutes > 0:
         pressure_point = (
             'Checkpoint-specific decay now looks like the clearest near-term pressure point: '
             f'{replay_profile.replace("_", " ")} is replay-supported at {best_replay_offset_minutes} minutes '
@@ -87,13 +94,17 @@ def build_goal_alignment_summary(
         what_matters_now.append(
             f'Use historical replay under the current clean logic as the primary evidence engine; cached replay currently covers {replay_trading_days} trading day{'s' if replay_trading_days != 1 else ''} and points most strongly at {replay_profile or "no clear profile yet"}.'
         )
-        if checkpoint_specific_replay_support and replay_profile and best_replay_offset_minutes > 0:
+        if (checkpoint_specific_replay_support or checkpoint_gate_shadow_test) and replay_profile and best_replay_offset_minutes > 0:
             what_matters_now.append(
                 f'Replay now supports {replay_profile} specifically at the {best_replay_offset_minutes}-minute checkpoint ({best_replay_offset_share}), while the weaker checkpoint remains below support. Treat that as a narrow checkpoint-specific signal, not as permission for a live threshold change.'
             )
-        if checkpoint_specific_replay_support and worst_replay_offset_minutes > 0:
+        if (checkpoint_specific_replay_support or checkpoint_gate_shadow_test) and worst_replay_offset_minutes > 0:
             what_matters_now.append(
                 f'Prioritize bottleneck work on why the {worst_replay_offset_minutes}-minute checkpoint decays, especially entry-touched-no-target misses, before changing stage-2 or live-gate behavior.'
+            )
+        if checkpoint_gate_shadow_test and replay_gate_metric:
+            what_matters_now.append(
+                f'Compatibility analysis now supports a weaker-checkpoint shadow gate candidate using {replay_gate_metric} {replay_gate_comparator} {replay_gate_threshold} ({replay_gate_share}). Treat that as a shadow-test input only, not as permission for a live threshold change.'
             )
         what_matters_now.append(
             'Treat live clean days as the release gate on top of replay evidence, not as the main statistical source of confidence.'
@@ -134,6 +145,10 @@ def build_goal_alignment_summary(
     elif replay_verdict == 'historical_replay_supports_candidate_profile':
         overall_assessment = (
             'The app now has a replay-backed candidate profile under the current clean logic. Live behavior should still stay frozen until the release gate opens on clean live evidence.'
+        )
+    elif checkpoint_gate_shadow_test:
+        overall_assessment = (
+            'The app is closer to the true objective because replay now isolates a checkpoint-specific candidate and a weaker-checkpoint scan-time gate candidate for shadow testing. The evidence still supports holding live behavior steady; the next change should test the weaker-checkpoint gate in shadow, not change live thresholds.'
         )
     elif checkpoint_specific_replay_support:
         overall_assessment = (
@@ -176,6 +191,10 @@ def build_goal_alignment_summary(
         'historical_replay_best_supported_offset_share': best_replay_offset_share,
         'historical_replay_worst_offset_minutes': worst_replay_offset_minutes or None,
         'historical_replay_worst_offset_share': worst_replay_offset_share,
+        'historical_replay_weaker_checkpoint_gate_metric': replay_gate_metric,
+        'historical_replay_weaker_checkpoint_gate_comparator': replay_gate_comparator,
+        'historical_replay_weaker_checkpoint_gate_threshold': replay_gate_threshold,
+        'historical_replay_weaker_checkpoint_gate_share': replay_gate_share,
     }
 
 
@@ -218,5 +237,9 @@ def build_goal_alignment_text(summary: dict[str, Any]) -> str:
         'historical_replay_best_supported_offset_share': summary.get('historical_replay_best_supported_offset_share'),
         'historical_replay_worst_offset_minutes': summary.get('historical_replay_worst_offset_minutes'),
         'historical_replay_worst_offset_share': summary.get('historical_replay_worst_offset_share'),
+        'historical_replay_weaker_checkpoint_gate_metric': summary.get('historical_replay_weaker_checkpoint_gate_metric'),
+        'historical_replay_weaker_checkpoint_gate_comparator': summary.get('historical_replay_weaker_checkpoint_gate_comparator'),
+        'historical_replay_weaker_checkpoint_gate_threshold': summary.get('historical_replay_weaker_checkpoint_gate_threshold'),
+        'historical_replay_weaker_checkpoint_gate_share': summary.get('historical_replay_weaker_checkpoint_gate_share'),
     }, indent=2)])
     return '\n'.join(lines).strip() + '\n'
