@@ -91,6 +91,54 @@ def _cache_summary_path(settings: Settings) -> Path:
 
 
 
+def clear_decision_bundle_cache(settings: Settings) -> None:
+    zip_path = _cache_zip_path(settings)
+    summary_path = _cache_summary_path(settings)
+    for path in (zip_path, summary_path):
+        try:
+            if path.exists():
+                path.unlink()
+        except Exception:
+            pass
+    try:
+        cache_dir = zip_path.parent
+        if cache_dir.exists() and not any(cache_dir.iterdir()):
+            cache_dir.rmdir()
+    except Exception:
+        pass
+
+
+
+def _read_cached_decision_state_unvalidated(settings: Settings) -> dict[str, Any] | None:
+    path = _cache_summary_path(settings)
+    if not path.exists():
+        return None
+    try:
+        return dict(json.loads(path.read_text(encoding='utf-8')))
+    except Exception:
+        return None
+
+
+
+def _is_cached_decision_state_current(payload: dict[str, Any] | None) -> bool:
+    if not payload:
+        return False
+    return str(payload.get('app_version') or '') == VERSION
+
+
+
+def _is_cached_decision_bundle_zip_current(raw: bytes | None) -> bool:
+    if not raw:
+        return False
+    try:
+        with zipfile.ZipFile(BytesIO(raw)) as zf:
+            manifest = json.loads(zf.read('MANIFEST.json').decode('utf-8'))
+        return str(manifest.get('app_version') or '') == VERSION
+    except Exception:
+        return False
+
+
+
 def _backfill_summary_from_shadow_pack(shadow_pack: dict[str, bytes], *, days: int, offsets: list[int]) -> dict[str, Any]:
     shadow_summary = _read_json_bytes(shadow_pack.get('shadow_promotion_summary.json', b''))
     readiness_rows = _read_csv_bytes(shadow_pack.get('shadow_promotion_readiness_rows.csv', b''))
@@ -544,13 +592,14 @@ def write_decision_bundle_cache(
 
 
 def read_cached_decision_state(settings: Settings) -> dict[str, Any] | None:
-    path = _cache_summary_path(settings)
-    if not path.exists():
+    payload = _read_cached_decision_state_unvalidated(settings)
+    if payload is None:
+        clear_decision_bundle_cache(settings)
         return None
-    try:
-        return dict(json.loads(path.read_text(encoding='utf-8')))
-    except Exception:
+    if not _is_cached_decision_state_current(payload):
+        clear_decision_bundle_cache(settings)
         return None
+    return payload
 
 
 
@@ -559,9 +608,17 @@ def read_cached_decision_bundle_zip(settings: Settings) -> bytes | None:
     if not path.exists():
         return None
     try:
-        return path.read_bytes()
+        raw = path.read_bytes()
     except Exception:
+        clear_decision_bundle_cache(settings)
         return None
+    if not _is_cached_decision_bundle_zip_current(raw):
+        clear_decision_bundle_cache(settings)
+        return None
+    summary_path = _cache_summary_path(settings)
+    if summary_path.exists() and read_cached_decision_state(settings) is None:
+        return None
+    return raw
 
 
 
