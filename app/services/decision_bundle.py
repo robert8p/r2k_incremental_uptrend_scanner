@@ -16,6 +16,7 @@ from app.services.evidence_pack import pack_to_zip_bytes
 from app.services.goal_alignment import build_goal_alignment_summary, build_goal_alignment_text
 from app.services.shadow_visual_review_pack import build_shadow_visual_review_pack
 from app.services.replay_supported_visual_review_pack import build_replay_supported_visual_review_pack
+from app.services.surfaced_checkpoint_visual_review_pack import build_surfaced_checkpoint_visual_review_pack
 from app.services.replay_bottleneck_pack import build_replay_bottleneck_pack
 from app.services.historical_replay_shadow_pack import (
     read_cached_historical_replay_summary,
@@ -232,6 +233,28 @@ def _summarize_replay_supported_visual_review(summary: dict[str, Any] | None) ->
     }
 
 
+def _summarize_surfaced_checkpoint_visual_review(summary: dict[str, Any] | None) -> dict[str, Any]:
+    payload = dict(summary or {})
+    verdict_counts = dict(payload.get('visual_review_verdict_counts') or {})
+    selected_count = _to_int(payload.get('selected_review_count'))
+    trend_biased = _to_int(verdict_counts.get('tradeable_but_trend_biased'))
+    supportive = _to_int(verdict_counts.get('visually_supportive_range')) + _to_int(verdict_counts.get('clean_range_cycler'))
+    thesis_misaligned = selected_count > 0 and trend_biased == selected_count and supportive == 0
+    return {
+        'available': bool(payload),
+        'focus_trading_day': payload.get('focus_trading_day'),
+        'focus_offset_minutes': _to_int(payload.get('focus_offset_minutes')) or None,
+        'selected_review_count': selected_count,
+        'stage2_candidates_at_focus_checkpoint': _to_int(payload.get('stage2_candidates_at_focus_checkpoint')),
+        'visual_review_verdict_counts': verdict_counts,
+        'all_tradeable_but_trend_biased': thesis_misaligned,
+        'supports_range_cycling_thesis': supportive > 0,
+        'supportive_range_count': supportive,
+        'trend_biased_share': (float(trend_biased) / float(selected_count)) if selected_count > 0 else None,
+        'summary': payload,
+    }
+
+
 def _apply_visual_review_guardrail(backfill: dict[str, Any], visual_review: dict[str, Any]) -> dict[str, Any]:
     adjusted = dict(backfill or {})
     if not visual_review.get('available'):
@@ -263,6 +286,7 @@ def _decision_recommendation(
     regressed_count: int,
     visual_review: dict[str, Any] | None = None,
     replay_supported_visual_review: dict[str, Any] | None = None,
+    surfaced_checkpoint_visual_review: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     replay_verdict = str(replay_summary.get('overall_verdict') or '')
     replay_profile = ((replay_summary.get('recommended_profile') or {}) or {}).get('profile_name')
@@ -280,6 +304,25 @@ def _decision_recommendation(
     readiness = str(promotion_readiness or 'insufficient_evidence')
     visual = dict(visual_review or {})
     replay_visual = dict(replay_supported_visual_review or {})
+    surfaced_visual = dict(surfaced_checkpoint_visual_review or {})
+    if surfaced_visual.get('available') and _to_int(surfaced_visual.get('selected_review_count')) > 0:
+        selected_count = _to_int(surfaced_visual.get('selected_review_count'))
+        focus_offset_minutes = _to_int(surfaced_visual.get('focus_offset_minutes'))
+        supportive_range_count = _to_int(surfaced_visual.get('supportive_range_count'))
+        if surfaced_visual.get('supports_range_cycling_thesis'):
+            return (
+                'surfaced_checkpoint_visual_review_supports_thesis_hold_live_behavior',
+                f'Automated visual review of the actual surfaced stage-2 names now shows {supportive_range_count} of {selected_count} reviewed rows at the {focus_offset_minutes}-minute checkpoint looked visually supportive of range-cycling. Keep live behavior frozen and treat this as reality-grounded evidence on the surfaced path, not as justification for any live threshold change yet.',
+            )
+        if surfaced_visual.get('all_tradeable_but_trend_biased'):
+            return (
+                'surfaced_checkpoint_visual_review_flags_thesis_misalignment_hold_live_behavior',
+                f'Automated visual review of the actual surfaced stage-2 names now shows all {selected_count} reviewed rows at the {focus_offset_minutes}-minute checkpoint were tradeable only in a trend-biased way rather than as clean range-cycling setups. Keep live behavior frozen and do not treat the currently surfaced path as thesis-valid yet.',
+            )
+        return (
+            'surfaced_checkpoint_visual_review_inconclusive_hold_live_behavior',
+            f'Automated visual review of the actual surfaced stage-2 names at the {focus_offset_minutes}-minute checkpoint was mixed rather than clearly thesis-valid. Keep live behavior frozen and avoid any live change until the surfaced path is cleaner.',
+        )
     if replay_visual.get('available') and _to_int(replay_visual.get('selected_review_count')) > 0:
         selected_count = _to_int(replay_visual.get('selected_review_count'))
         focus_profile_name = str(replay_visual.get('focus_profile_name') or replay_profile or 'the replay-supported profile')
@@ -377,6 +420,7 @@ def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int
         current_valid_now_count=0,
         regressed_count=0,
         replay_supported_visual_review=None,
+        surfaced_checkpoint_visual_review=None,
     )
     return {
         'generated_at_utc': datetime.now(UTC).isoformat(),
@@ -401,6 +445,7 @@ def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int
         'historical_replay_bottleneck': {},
         'historical_replay_checkpoint_compatibility': {},
         'replay_supported_visual_review': {},
+        'surfaced_checkpoint_visual_review': {},
         'historical_shadow_backfill': {
             'bundle_type': 'historical_shadow_backfill',
             'days_requested': int(days),
@@ -476,6 +521,16 @@ def build_decision_state(
     replay_supported_visual_review_summary = _summarize_replay_supported_visual_review(
         _read_json_bytes(replay_supported_visual_review_pack.get('replay_supported_visual_review_summary.json', b''))
     )
+    surfaced_checkpoint_visual_review_pack = build_surfaced_checkpoint_visual_review_pack(
+        settings,
+        repos,
+        alpaca,
+        days=min(int(days), 10),
+        offsets=requested_offsets,
+    )
+    surfaced_checkpoint_visual_review_summary = _summarize_surfaced_checkpoint_visual_review(
+        _read_json_bytes(surfaced_checkpoint_visual_review_pack.get('surfaced_checkpoint_visual_review_summary.json', b''))
+    )
     recommendation_code, recommendation_message = _decision_recommendation(
         replay_summary=replay_summary,
         replay_bottleneck_summary=replay_bottleneck_summary,
@@ -486,6 +541,7 @@ def build_decision_state(
         regressed_count=_to_int(checkpoint_summary.get('regressed_after_earlier_validity_count')),
         visual_review=visual_review_summary,
         replay_supported_visual_review=replay_supported_visual_review_summary,
+        surfaced_checkpoint_visual_review=surfaced_checkpoint_visual_review_summary,
     )
     return {
         'generated_at_utc': datetime.now(UTC).isoformat(),
@@ -510,6 +566,7 @@ def build_decision_state(
         'historical_replay_bottleneck': replay_bottleneck_summary,
         'historical_replay_checkpoint_compatibility': replay_checkpoint_compatibility_summary,
         'replay_supported_visual_review': replay_supported_visual_review_summary,
+        'surfaced_checkpoint_visual_review': surfaced_checkpoint_visual_review_summary,
         'shadow_visual_review': visual_review_summary,
         'historical_shadow_backfill': backfill,
         'checkpoint_summary': checkpoint_summary,
@@ -555,6 +612,7 @@ def build_decision_bundle_pack(
     replay_checkpoint_compatibility_summary = dict(decision_state.get('historical_replay_checkpoint_compatibility') or {})
     shadow_visual_review_summary = dict((decision_state.get('shadow_visual_review') or {}).get('summary') or {})
     replay_supported_visual_review_summary = dict((decision_state.get('replay_supported_visual_review') or {}).get('summary') or {})
+    surfaced_checkpoint_visual_review_summary = dict((decision_state.get('surfaced_checkpoint_visual_review') or {}).get('summary') or {})
     replay_cached_files = _extract_cached_replay_files(settings)
     checkpoint_summary = dict(decision_state.get('checkpoint_summary') or {})
     try:
@@ -611,6 +669,14 @@ def build_decision_bundle_pack(
         f"- Selected review count: {replay_supported_visual_review_summary.get('selected_review_count')}",
         f"- Visual verdict counts: {replay_supported_visual_review_summary.get('visual_review_verdict_counts')}",
     ]
+    surfaced_visual_lines = [
+        '## Surfaced checkpoint visual review',
+        f"- Available: {bool(surfaced_checkpoint_visual_review_summary)}",
+        f"- Focus trading day: {surfaced_checkpoint_visual_review_summary.get('focus_trading_day')}",
+        f"- Focus checkpoint: {surfaced_checkpoint_visual_review_summary.get('focus_offset_minutes')}",
+        f"- Selected review count: {surfaced_checkpoint_visual_review_summary.get('selected_review_count')}",
+        f"- Visual verdict counts: {surfaced_checkpoint_visual_review_summary.get('visual_review_verdict_counts')}",
+    ]
 
     manifest = {
         'bundle_type': 'decision_bundle',
@@ -636,6 +702,7 @@ def build_decision_bundle_pack(
         'historical_replay_checkpoint_compatibility_summary.json': json.dumps(replay_checkpoint_compatibility_summary, indent=2).encode('utf-8'),
         'shadow_visual_review_summary.json': json.dumps(shadow_visual_review_summary, indent=2).encode('utf-8'),
         'replay_supported_visual_review_summary.json': json.dumps(replay_supported_visual_review_summary, indent=2).encode('utf-8'),
+        'surfaced_checkpoint_visual_review_summary.json': json.dumps(surfaced_checkpoint_visual_review_summary, indent=2).encode('utf-8'),
         'checkpoint_decision_summary.json': json.dumps(checkpoint_summary, indent=2).encode('utf-8'),
         'historical_shadow_daily_rollup.csv': shadow_pack.get('overstrictness_shadow_daily_rollup.csv', b''),
         'historical_shadow_profile_rollup.csv': shadow_pack.get('shadow_threshold_profile_rollup.csv', b''),
@@ -643,7 +710,7 @@ def build_decision_bundle_pack(
         'historical_replay_shadow_daily_rollup.csv': replay_cached_files.get('historical_replay_shadow_daily_rollup.csv', b''),
         'historical_replay_shadow_profile_rollup.csv': replay_cached_files.get('historical_replay_shadow_profile_rollup.csv', b''),
         'checkpoint_decision_scan_rows.csv': checkpoint_pack.get('checkpoint_decision_scan_rows.csv', b''),
-        'report.md': '\n'.join(report_lines).encode('utf-8'),
+        'report.md': '\n'.join(report_lines + [''] + replay_supported_lines + [''] + surfaced_visual_lines).encode('utf-8'),
     }
     return pack
 

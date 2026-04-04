@@ -1,0 +1,13 @@
+After v1.39.23 is live, the app should stop serving stale decision-bundle artifacts across deploys.
+
+What to share back:
+- a freshly downloaded /diagnostics/decision-bundle.zip
+
+When it will be available:
+- immediately after v1.39.23 finishes redeploying
+- on the first decision-bundle download request, because stale cache artifacts should auto-clear and rebuild under the current app version
+
+What I will check first:
+- app_version is 1.39.23
+- generated_at_utc is fresh
+- the bundle is no longer carrying forward an older cached version

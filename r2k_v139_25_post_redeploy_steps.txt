@@ -1,0 +1,8 @@
+1. Confirm /healthz shows 1.39.25.
+2. Download /diagnostics/decision-bundle.zip?token=YOUR_AUTH_TOKEN.
+3. Upload that decision-bundle ZIP back into the chat.
+
+What I will check first:
+- app_version = 1.39.25
+- surfaced_checkpoint_visual_review exists in decision_state_summary.json
+- recommendation code reflects the actual surfaced 120-minute path rather than the dead replay-supported rescue path

@@ -1,0 +1,15 @@
+1. Confirm /healthz shows version 1.39.24.
+2. Download /diagnostics/decision-bundle.zip?token=YOUR_AUTH_TOKEN
+3. Upload that fresh decision bundle into the chat.
+
+What to share:
+- decision_bundle_last_60_sessions.zip
+
+When it will be available:
+- immediately after 1.39.24 is live
+- on the first decision-bundle download request, because decision-bundle generation now auto-builds and ingests the replay-supported visual review summary
+
+What will be checked first:
+- app_version is 1.39.24
+- replay_supported_visual_review is present in decision_state_summary.json
+- decision_recommendation_code reflects the replay-supported visual review result rather than letting the old soft_bounce_quality branch dominate the machine state
