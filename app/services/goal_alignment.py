@@ -40,17 +40,31 @@ def build_goal_alignment_summary(
     currently_valid_now_count = int(decision.get('currently_valid_now_count') or 0)
     regressed_count = int(decision.get('regressed_after_earlier_validity_count') or 0)
     replay_summary = dict(decision.get('historical_replay_shadow') or {})
+    replay_bottleneck = dict(decision.get('historical_replay_bottleneck') or {})
     replay_available = bool(replay_summary.get('available'))
     replay_profile = ((replay_summary.get('recommended_profile') or {}) or {}).get('profile_name')
     replay_verdict = str(replay_summary.get('overall_verdict') or '')
     replay_trading_days = int(replay_summary.get('trading_day_count') or 0)
+    best_replay_offset = dict(replay_bottleneck.get('best_offset_by_tradeable_share') or {})
+    worst_replay_offset = dict(replay_bottleneck.get('worst_offset_by_tradeable_share') or {})
+    best_replay_offset_minutes = int(best_replay_offset.get('scan_offset_minutes') or 0)
+    worst_replay_offset_minutes = int(worst_replay_offset.get('scan_offset_minutes') or 0)
+    best_replay_offset_share = best_replay_offset.get('tradeable_share')
+    worst_replay_offset_share = worst_replay_offset.get('tradeable_share')
+    checkpoint_specific_replay_support = recommendation == 'historical_replay_supports_checkpoint_specific_candidate_hold_live_gate'
 
     operating_posture = (
         f"Production, {settings.trading_mode}, live trading {'enabled' if settings.enable_live_trading else 'disabled'}, "
         f"{settings.alpaca_data_feed.upper()} data, scheduled checkpoints {', '.join(str(x) for x in settings.scheduled_offsets)} minutes."
     )
 
-    if replay_profile in {'soft_bounce_quality', 'combined_soft_structure'} or best_shadow_profile in {'soft_bounce_quality', 'combined_soft_structure'}:
+    if checkpoint_specific_replay_support and replay_profile and best_replay_offset_minutes > 0 and worst_replay_offset_minutes > 0:
+        pressure_point = (
+            'Checkpoint-specific decay now looks like the clearest near-term pressure point: '
+            f'{replay_profile.replace("_", " ")} is replay-supported at {best_replay_offset_minutes} minutes '
+            f'but materially weaker by {worst_replay_offset_minutes} minutes. No live change is justified yet.'
+        )
+    elif replay_profile in {'soft_bounce_quality', 'combined_soft_structure'} or best_shadow_profile in {'soft_bounce_quality', 'combined_soft_structure'}:
         focus_profile = replay_profile or best_shadow_profile
         pressure_point = (
             'Strict structural classifier settings still look like the most likely future pressure point, '
@@ -73,6 +87,14 @@ def build_goal_alignment_summary(
         what_matters_now.append(
             f'Use historical replay under the current clean logic as the primary evidence engine; cached replay currently covers {replay_trading_days} trading day{'s' if replay_trading_days != 1 else ''} and points most strongly at {replay_profile or "no clear profile yet"}.'
         )
+        if checkpoint_specific_replay_support and replay_profile and best_replay_offset_minutes > 0:
+            what_matters_now.append(
+                f'Replay now supports {replay_profile} specifically at the {best_replay_offset_minutes}-minute checkpoint ({best_replay_offset_share}), while the weaker checkpoint remains below support. Treat that as a narrow checkpoint-specific signal, not as permission for a live threshold change.'
+            )
+        if checkpoint_specific_replay_support and worst_replay_offset_minutes > 0:
+            what_matters_now.append(
+                f'Prioritize bottleneck work on why the {worst_replay_offset_minutes}-minute checkpoint decays, especially entry-touched-no-target misses, before changing stage-2 or live-gate behavior.'
+            )
         what_matters_now.append(
             'Treat live clean days as the release gate on top of replay evidence, not as the main statistical source of confidence.'
         )
@@ -113,6 +135,10 @@ def build_goal_alignment_summary(
         overall_assessment = (
             'The app now has a replay-backed candidate profile under the current clean logic. Live behavior should still stay frozen until the release gate opens on clean live evidence.'
         )
+    elif checkpoint_specific_replay_support:
+        overall_assessment = (
+            'The app is closer to the true objective because replay now isolates a checkpoint-specific candidate, but the evidence still supports holding live behavior steady. The next change should target checkpoint-specific decay, not broad threshold loosening.'
+        )
     elif readiness == 'shadow_profile_promising_but_early':
         overall_assessment = (
             'The app looks coherent for the current evidence-first phase. The most likely future change area is structural-classifier softness, '
@@ -146,6 +172,10 @@ def build_goal_alignment_summary(
         'historical_replay_best_profile': replay_profile,
         'historical_replay_overall_verdict': replay_verdict,
         'historical_replay_trading_day_count': replay_trading_days,
+        'historical_replay_best_supported_offset_minutes': best_replay_offset_minutes or None,
+        'historical_replay_best_supported_offset_share': best_replay_offset_share,
+        'historical_replay_worst_offset_minutes': worst_replay_offset_minutes or None,
+        'historical_replay_worst_offset_share': worst_replay_offset_share,
     }
 
 
@@ -184,5 +214,9 @@ def build_goal_alignment_text(summary: dict[str, Any]) -> str:
         'historical_replay_best_profile': summary.get('historical_replay_best_profile'),
         'historical_replay_overall_verdict': summary.get('historical_replay_overall_verdict'),
         'historical_replay_trading_day_count': summary.get('historical_replay_trading_day_count'),
+        'historical_replay_best_supported_offset_minutes': summary.get('historical_replay_best_supported_offset_minutes'),
+        'historical_replay_best_supported_offset_share': summary.get('historical_replay_best_supported_offset_share'),
+        'historical_replay_worst_offset_minutes': summary.get('historical_replay_worst_offset_minutes'),
+        'historical_replay_worst_offset_share': summary.get('historical_replay_worst_offset_share'),
     }, indent=2)])
     return '\n'.join(lines).strip() + '\n'
