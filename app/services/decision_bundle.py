@@ -15,6 +15,7 @@ from app.services.checkpoint_decision_surface import build_checkpoint_decision_p
 from app.services.evidence_pack import pack_to_zip_bytes
 from app.services.goal_alignment import build_goal_alignment_summary, build_goal_alignment_text
 from app.services.shadow_visual_review_pack import build_shadow_visual_review_pack
+from app.services.replay_supported_visual_review_pack import build_replay_supported_visual_review_pack
 from app.services.replay_bottleneck_pack import build_replay_bottleneck_pack
 from app.services.historical_replay_shadow_pack import (
     read_cached_historical_replay_summary,
@@ -194,7 +195,7 @@ def _summarize_visual_review(summary: dict[str, Any] | None) -> dict[str, Any]:
     verdict_counts = dict(payload.get('visual_review_verdict_counts') or {})
     selected_count = _to_int(payload.get('selected_review_count'))
     trend_biased = _to_int(verdict_counts.get('tradeable_but_trend_biased'))
-    clean_range = _to_int(verdict_counts.get('clean_range_cycler'))
+    clean_range = _to_int(verdict_counts.get('visually_supportive_range')) + _to_int(verdict_counts.get('clean_range_cycler'))
     supports_range = clean_range > 0
     thesis_misaligned = selected_count > 0 and trend_biased == selected_count and clean_range == 0
     return {
@@ -204,6 +205,28 @@ def _summarize_visual_review(summary: dict[str, Any] | None) -> dict[str, Any]:
         'visual_review_verdict_counts': verdict_counts,
         'all_tradeable_but_trend_biased': thesis_misaligned,
         'supports_range_cycling_thesis': supports_range,
+        'trend_biased_share': (float(trend_biased) / float(selected_count)) if selected_count > 0 else None,
+        'summary': payload,
+    }
+
+
+def _summarize_replay_supported_visual_review(summary: dict[str, Any] | None) -> dict[str, Any]:
+    payload = dict(summary or {})
+    verdict_counts = dict(payload.get('visual_review_verdict_counts') or {})
+    selected_count = _to_int(payload.get('selected_review_count'))
+    trend_biased = _to_int(verdict_counts.get('tradeable_but_trend_biased'))
+    supportive = _to_int(verdict_counts.get('visually_supportive_range')) + _to_int(verdict_counts.get('clean_range_cycler'))
+    thesis_misaligned = selected_count > 0 and trend_biased == selected_count and supportive == 0
+    return {
+        'available': bool(payload),
+        'focus_profile_name': payload.get('focus_profile_name'),
+        'focus_offset_minutes': _to_int(payload.get('focus_offset_minutes')) or None,
+        'focus_offset_tradeable_share': _to_float(payload.get('focus_offset_tradeable_share')),
+        'selected_review_count': selected_count,
+        'visual_review_verdict_counts': verdict_counts,
+        'all_tradeable_but_trend_biased': thesis_misaligned,
+        'supports_range_cycling_thesis': supportive > 0,
+        'supportive_range_count': supportive,
         'trend_biased_share': (float(trend_biased) / float(selected_count)) if selected_count > 0 else None,
         'summary': payload,
     }
@@ -239,6 +262,7 @@ def _decision_recommendation(
     current_valid_now_count: int,
     regressed_count: int,
     visual_review: dict[str, Any] | None = None,
+    replay_supported_visual_review: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     replay_verdict = str(replay_summary.get('overall_verdict') or '')
     replay_profile = ((replay_summary.get('recommended_profile') or {}) or {}).get('profile_name')
@@ -255,6 +279,26 @@ def _decision_recommendation(
     best_gate_reaches_support = bool(best_gate.get('reaches_support_threshold'))
     readiness = str(promotion_readiness or 'insufficient_evidence')
     visual = dict(visual_review or {})
+    replay_visual = dict(replay_supported_visual_review or {})
+    if replay_visual.get('available') and _to_int(replay_visual.get('selected_review_count')) > 0:
+        selected_count = _to_int(replay_visual.get('selected_review_count'))
+        focus_profile_name = str(replay_visual.get('focus_profile_name') or replay_profile or 'the replay-supported profile')
+        focus_offset_minutes = _to_int(replay_visual.get('focus_offset_minutes'))
+        supportive_range_count = _to_int(replay_visual.get('supportive_range_count'))
+        if replay_visual.get('supports_range_cycling_thesis'):
+            return (
+                'replay_supported_visual_review_supports_thesis_hold_live_behavior',
+                f'Automated visual review of the replay-supported path now shows {supportive_range_count} of {selected_count} reviewed {focus_profile_name} rows at the {focus_offset_minutes}-minute checkpoint looked visually supportive of range-cycling. Keep live behavior frozen and treat this as evidence for narrow confirmation of that exact path, not for broad classifier-softening or live threshold changes.',
+            )
+        if replay_visual.get('all_tradeable_but_trend_biased'):
+            return (
+                'replay_supported_visual_review_flags_thesis_misalignment_hold_live_behavior',
+                f'Automated visual review of the replay-supported path now shows all {selected_count} reviewed {focus_profile_name} rows at the {focus_offset_minutes}-minute checkpoint were tradeable only in a trend-biased way rather than as clean range-cycling setups. Keep live behavior frozen and do not treat replay support for that path as thesis-valid yet.',
+            )
+        return (
+            'replay_supported_visual_review_inconclusive_hold_live_behavior',
+            f'Automated visual review of the replay-supported path for {focus_profile_name} at the {focus_offset_minutes}-minute checkpoint was mixed rather than clearly thesis-valid. Keep live behavior frozen and avoid any live change until a cleaner path is isolated.',
+        )
     if visual.get('all_tradeable_but_trend_biased'):
         selected_count = _to_int(visual.get('selected_review_count'))
         best_profile_name = str(visual.get('best_profile_name') or replay_profile or 'the current shadow profile')
@@ -332,6 +376,7 @@ def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int
         clean_day_count=0,
         current_valid_now_count=0,
         regressed_count=0,
+        replay_supported_visual_review=None,
     )
     return {
         'generated_at_utc': datetime.now(UTC).isoformat(),
@@ -355,6 +400,7 @@ def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int
         'historical_replay_shadow': replay_summary,
         'historical_replay_bottleneck': {},
         'historical_replay_checkpoint_compatibility': {},
+        'replay_supported_visual_review': {},
         'historical_shadow_backfill': {
             'bundle_type': 'historical_shadow_backfill',
             'days_requested': int(days),
@@ -419,6 +465,17 @@ def build_decision_state(
         offsets=requested_offsets,
     ) if replay_summary.get('available') else {}
     replay_checkpoint_compatibility_summary = _read_json_bytes(replay_checkpoint_compatibility_pack.get('replay_checkpoint_compatibility_summary.json', b''))
+    replay_supported_visual_review_pack = build_replay_supported_visual_review_pack(
+        settings,
+        repos,
+        alpaca,
+        days=min(int(days), 10),
+        offsets=requested_offsets,
+        lookback_days=DEFAULT_REPLAY_LOOKBACK_DAYS,
+    ) if replay_summary.get('available') else {}
+    replay_supported_visual_review_summary = _summarize_replay_supported_visual_review(
+        _read_json_bytes(replay_supported_visual_review_pack.get('replay_supported_visual_review_summary.json', b''))
+    )
     recommendation_code, recommendation_message = _decision_recommendation(
         replay_summary=replay_summary,
         replay_bottleneck_summary=replay_bottleneck_summary,
@@ -428,6 +485,7 @@ def build_decision_state(
         current_valid_now_count=_to_int(checkpoint_summary.get('currently_valid_now_count')),
         regressed_count=_to_int(checkpoint_summary.get('regressed_after_earlier_validity_count')),
         visual_review=visual_review_summary,
+        replay_supported_visual_review=replay_supported_visual_review_summary,
     )
     return {
         'generated_at_utc': datetime.now(UTC).isoformat(),
@@ -451,6 +509,7 @@ def build_decision_state(
         'historical_replay_shadow': replay_summary,
         'historical_replay_bottleneck': replay_bottleneck_summary,
         'historical_replay_checkpoint_compatibility': replay_checkpoint_compatibility_summary,
+        'replay_supported_visual_review': replay_supported_visual_review_summary,
         'shadow_visual_review': visual_review_summary,
         'historical_shadow_backfill': backfill,
         'checkpoint_summary': checkpoint_summary,
@@ -495,6 +554,7 @@ def build_decision_bundle_pack(
     replay_bottleneck_summary = dict(decision_state.get('historical_replay_bottleneck') or {})
     replay_checkpoint_compatibility_summary = dict(decision_state.get('historical_replay_checkpoint_compatibility') or {})
     shadow_visual_review_summary = dict((decision_state.get('shadow_visual_review') or {}).get('summary') or {})
+    replay_supported_visual_review_summary = dict((decision_state.get('replay_supported_visual_review') or {}).get('summary') or {})
     replay_cached_files = _extract_cached_replay_files(settings)
     checkpoint_summary = dict(decision_state.get('checkpoint_summary') or {})
     try:
@@ -543,6 +603,14 @@ def build_decision_bundle_pack(
         f"- Selected review count: {shadow_visual_review_summary.get('selected_review_count')}",
         f"- Visual verdict counts: {shadow_visual_review_summary.get('visual_review_verdict_counts')}",
     ]
+    replay_supported_lines = [
+        '## Replay-supported visual review',
+        f"- Available: {bool(replay_supported_visual_review_summary)}",
+        f"- Focus profile: {replay_supported_visual_review_summary.get('focus_profile_name')}",
+        f"- Focus checkpoint: {replay_supported_visual_review_summary.get('focus_offset_minutes')}",
+        f"- Selected review count: {replay_supported_visual_review_summary.get('selected_review_count')}",
+        f"- Visual verdict counts: {replay_supported_visual_review_summary.get('visual_review_verdict_counts')}",
+    ]
 
     manifest = {
         'bundle_type': 'decision_bundle',
@@ -567,6 +635,7 @@ def build_decision_bundle_pack(
         'historical_replay_bottleneck_summary.json': json.dumps(replay_bottleneck_summary, indent=2).encode('utf-8'),
         'historical_replay_checkpoint_compatibility_summary.json': json.dumps(replay_checkpoint_compatibility_summary, indent=2).encode('utf-8'),
         'shadow_visual_review_summary.json': json.dumps(shadow_visual_review_summary, indent=2).encode('utf-8'),
+        'replay_supported_visual_review_summary.json': json.dumps(replay_supported_visual_review_summary, indent=2).encode('utf-8'),
         'checkpoint_decision_summary.json': json.dumps(checkpoint_summary, indent=2).encode('utf-8'),
         'historical_shadow_daily_rollup.csv': shadow_pack.get('overstrictness_shadow_daily_rollup.csv', b''),
         'historical_shadow_profile_rollup.csv': shadow_pack.get('shadow_threshold_profile_rollup.csv', b''),

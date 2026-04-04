@@ -64,13 +64,33 @@ def build_goal_alignment_summary(
     visual_verdict_counts = dict(visual_summary.get('visual_review_verdict_counts') or {})
     visual_selected_count = int(shadow_visual_review.get('selected_review_count') or visual_summary.get('selected_review_count') or 0)
     visual_all_trend_biased = bool(shadow_visual_review.get('all_tradeable_but_trend_biased'))
+    replay_supported_visual_review = dict(decision.get('replay_supported_visual_review') or {})
+    replay_visual_summary = dict(replay_supported_visual_review.get('summary') or {})
+    replay_visual_verdict_counts = dict(replay_visual_summary.get('visual_review_verdict_counts') or {})
+    replay_visual_selected_count = int(replay_supported_visual_review.get('selected_review_count') or replay_visual_summary.get('selected_review_count') or 0)
+    replay_visual_supports_range = bool(replay_supported_visual_review.get('supports_range_cycling_thesis'))
+    replay_visual_all_trend_biased = bool(replay_supported_visual_review.get('all_tradeable_but_trend_biased'))
+    replay_visual_focus_profile = str(replay_supported_visual_review.get('focus_profile_name') or replay_visual_summary.get('focus_profile_name') or '') or None
+    replay_visual_focus_offset = int(replay_supported_visual_review.get('focus_offset_minutes') or replay_visual_summary.get('focus_offset_minutes') or 0)
 
     operating_posture = (
         f"Production, {settings.trading_mode}, live trading {'enabled' if settings.enable_live_trading else 'disabled'}, "
         f"{settings.alpaca_data_feed.upper()} data, scheduled checkpoints {', '.join(str(x) for x in settings.scheduled_offsets)} minutes."
     )
 
-    if visual_all_trend_biased and visual_selected_count > 0:
+    if replay_visual_all_trend_biased and replay_visual_selected_count > 0:
+        pressure_point = (
+            'The surviving replay-supported path now looks thesis-misaligned in recent live-shaped charts: '
+            f'all {replay_visual_selected_count} reviewed {replay_visual_focus_profile or "replay-supported"} rows at {replay_visual_focus_offset} minutes were trend-biased rather than clean range-cycling setups. '
+            'Do not treat replay support alone as product-valid yet.'
+        )
+    elif replay_visual_supports_range and replay_visual_selected_count > 0:
+        pressure_point = (
+            'The clearest near-term pressure point is now live-shaped confirmation of the replay-supported branch: '
+            f'{replay_visual_focus_profile or replay_profile or "the replay-supported profile"} at {replay_visual_focus_offset} minutes now has automated visual support, '
+            'but live behavior should still remain frozen until narrower confirmation is earned.'
+        )
+    elif visual_all_trend_biased and visual_selected_count > 0:
         pressure_point = (
             'Thesis fidelity now looks like the clearest near-term pressure point: '
             f'automated visual review marked all {visual_selected_count} reviewed rescues as trend-biased rather than clean range-cycling setups. '
@@ -113,6 +133,14 @@ def build_goal_alignment_summary(
             what_matters_now.append(
                 f'Prioritize bottleneck work on why the {worst_replay_offset_minutes}-minute checkpoint decays, especially entry-touched-no-target misses, before changing stage-2 or live-gate behavior.'
             )
+        if replay_visual_supports_range and replay_visual_selected_count > 0:
+            what_matters_now.append(
+                f'Automated visual review now supports the replay-backed {replay_visual_focus_profile or replay_profile or "profile"} path at {replay_visual_focus_offset} minutes on recent live-shaped rows. Treat that as the surviving thesis-valid branch while keeping live behavior frozen.'
+            )
+        if replay_visual_all_trend_biased and replay_visual_selected_count > 0:
+            what_matters_now.append(
+                f'Automated visual review now flags the replay-backed {replay_visual_focus_profile or replay_profile or "profile"} path at {replay_visual_focus_offset} minutes as trend-biased on all {replay_visual_selected_count} reviewed rows. Do not treat replay support for that branch as product-valid yet.'
+            )
         if checkpoint_gate_shadow_test and replay_gate_metric:
             what_matters_now.append(
                 f'Compatibility analysis now supports a weaker-checkpoint shadow gate candidate using {replay_gate_metric} {replay_gate_comparator} {replay_gate_threshold} ({replay_gate_share}). Treat that as a shadow-test input only, not as permission for a live threshold change.'
@@ -153,7 +181,15 @@ def build_goal_alignment_summary(
         'The automated evidence begins pointing at a different bottleneck than the current strict structural classifier story.',
     ]
 
-    if visual_all_trend_biased and visual_selected_count > 0:
+    if replay_visual_all_trend_biased and replay_visual_selected_count > 0:
+        overall_assessment = (
+            'The app is still not successful yet because the only surviving replay-supported branch now looks trend-biased rather than thesis-valid on recent live-shaped charts. Keep live behavior frozen and do not treat replay support by itself as product success.'
+        )
+    elif replay_visual_supports_range and replay_visual_selected_count > 0:
+        overall_assessment = (
+            'The app is closer to the true objective because the replay-supported path now also has automated visual support on recent live-shaped rows. Live behavior should still stay frozen; the next move should validate that exact supported path more narrowly, not broaden scoring or threshold changes.'
+        )
+    elif visual_all_trend_biased and visual_selected_count > 0:
         overall_assessment = (
             'The app is still not successful yet because the currently reviewed would-be rescues look tradeable only in a directional, trend-biased way rather than as clean range-cycling setups. The next move should tighten thesis fidelity in the machine state, not loosen live behavior.'
         )
@@ -217,6 +253,10 @@ def build_goal_alignment_summary(
         'shadow_visual_review_selected_count': visual_selected_count,
         'shadow_visual_review_verdict_counts': visual_verdict_counts,
         'shadow_visual_review_all_tradeable_but_trend_biased': visual_all_trend_biased,
+        'replay_supported_visual_review_selected_count': replay_visual_selected_count,
+        'replay_supported_visual_review_verdict_counts': replay_visual_verdict_counts,
+        'replay_supported_visual_review_supports_range_cycling_thesis': replay_visual_supports_range,
+        'replay_supported_visual_review_all_tradeable_but_trend_biased': replay_visual_all_trend_biased,
     }
 
 

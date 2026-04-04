@@ -395,6 +395,26 @@ def register_admin_routes(
             headers={'Content-Disposition': 'attachment; filename=overstrictness_shadow_pack_last_10_sessions.zip'},
         )
 
+    @app.get('/diagnostics/replay-supported-visual-review-pack.zip')
+    def diagnostics_replay_supported_visual_review_pack() -> Response:
+        from app.services.evidence_pack import pack_to_zip_bytes
+        from app.services.replay_supported_visual_review_pack import build_replay_supported_visual_review_pack
+
+        content = pack_to_zip_bytes(
+            build_replay_supported_visual_review_pack(
+                runtime.settings,
+                runtime.db,
+                runtime.alpaca,
+                days=10,
+                offsets=[120, 150],
+                lookback_days=90,
+            )
+        )
+        return Response(
+            content=content,
+            media_type='application/zip',
+            headers={'Content-Disposition': 'attachment; filename=replay_supported_visual_review_pack_last_10_sessions.zip'},
+        )
 
     @app.get('/diagnostics/shadow-visual-review-pack.zip')
     def diagnostics_shadow_visual_review_pack() -> Response:
