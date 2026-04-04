@@ -1,0 +1,14 @@
+1. Upload the extracted contents of the slim deploy ZIP to your GitHub repo root.
+2. Commit the upload.
+3. Let Render redeploy.
+4. Open /healthz and confirm the version is 1.39.20.
+5. Open Diagnostics.
+6. Click **Weaker checkpoint gate shadow pack**.
+7. Upload the downloaded ZIP back here.
+
+What to share:
+- weaker_checkpoint_gate_shadow_pack_latest_day.zip
+
+When it will be available:
+- after Render finishes redeploying v1.39.20
+- then immediately after clicking the new Diagnostics button

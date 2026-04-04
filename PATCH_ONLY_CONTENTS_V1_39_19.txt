@@ -1,0 +1,7 @@
+app/services/decision_bundle.py
+app/services/goal_alignment.py
+app/version.py
+tests/test_decision_bundle.py
+tests/test_goal_alignment.py
+PATCH_NOTES_V1_39_19_WEAKER_CHECKPOINT_GATE_SHADOW_TEST_DECISION_STATE.md
+r2k_v139_19_post_redeploy_steps.txt
