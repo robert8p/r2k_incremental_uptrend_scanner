@@ -488,6 +488,8 @@ def _fallback_decision_state(*, settings: Settings, days: int, offsets: list[int
         'replay_supported_visual_review': {},
         'surfaced_checkpoint_visual_review': {},
         'surfaced_multisession_visual_review': {},
+        'evidence_smoke_validation': {},
+        'replay_live_fidelity_audit': {},
         'historical_shadow_backfill': {
             'bundle_type': 'historical_shadow_backfill',
             'days_requested': int(days),
@@ -632,6 +634,9 @@ def build_decision_state(
         'historical_replay_checkpoint_compatibility': replay_checkpoint_compatibility_summary,
         'replay_supported_visual_review': replay_supported_visual_review_summary,
         'surfaced_checkpoint_visual_review': surfaced_checkpoint_visual_review_summary,
+        'surfaced_multisession_visual_review': surfaced_multisession_visual_review_summary,
+        'evidence_smoke_validation': evidence_smoke_summary,
+        'replay_live_fidelity_audit': replay_live_fidelity_summary,
         'shadow_visual_review': visual_review_summary,
         'historical_shadow_backfill': backfill,
         'checkpoint_summary': checkpoint_summary,
