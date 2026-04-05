@@ -588,6 +588,13 @@ def build_decision_state(
             )
         except Exception:
             surfaced_multisession_visual_review_summary = {}
+
+    from app.services.evidence_automation import (
+        read_cached_evidence_smoke_summary,
+        read_cached_replay_live_fidelity_summary,
+    )
+    evidence_smoke_summary = dict(read_cached_evidence_smoke_summary(settings) or {})
+    replay_live_fidelity_summary = dict(read_cached_replay_live_fidelity_summary(settings) or {})
     recommendation_code, recommendation_message = _decision_recommendation(
         replay_summary=replay_summary,
         replay_bottleneck_summary=replay_bottleneck_summary,
@@ -672,6 +679,8 @@ def build_decision_bundle_pack(
     replay_supported_visual_review_summary = dict((decision_state.get('replay_supported_visual_review') or {}).get('summary') or {})
     surfaced_checkpoint_visual_review_summary = dict((decision_state.get('surfaced_checkpoint_visual_review') or {}).get('summary') or {})
     surfaced_multisession_visual_review_summary = dict((decision_state.get('surfaced_multisession_visual_review') or {}).get('summary') or {})
+    evidence_smoke_summary = dict(decision_state.get('evidence_smoke_validation') or {})
+    replay_live_fidelity_summary = dict(decision_state.get('replay_live_fidelity_audit') or {})
     replay_cached_files = _extract_cached_replay_files(settings)
     checkpoint_summary = dict(decision_state.get('checkpoint_summary') or {})
     try:
@@ -743,6 +752,21 @@ def build_decision_bundle_pack(
         f"- Selected review count: {surfaced_multisession_visual_review_summary.get('selected_review_count')}",
         f"- Visual verdict counts: {surfaced_multisession_visual_review_summary.get('visual_review_verdict_counts')}",
     ]
+    evidence_smoke_lines = [
+        '## Evidence smoke validation',
+        f"- Available: {bool(evidence_smoke_summary)}",
+        f"- Overall status: {evidence_smoke_summary.get('overall_status')}",
+        f"- Decision-bundle cache fresh: {evidence_smoke_summary.get('decision_bundle_cache_fresh')}",
+        f"- Auth enabled: {evidence_smoke_summary.get('auth_enabled')}",
+    ]
+    fidelity_lines = [
+        '## Replay vs live fidelity audit',
+        f"- Available: {bool(replay_live_fidelity_summary)}",
+        f"- Verdict: {replay_live_fidelity_summary.get('verdict')}",
+        f"- Reason: {replay_live_fidelity_summary.get('reason')}",
+        f"- Focus profile: {replay_live_fidelity_summary.get('focus_profile_name')}",
+        f"- Focus checkpoint: {replay_live_fidelity_summary.get('focus_offset_minutes')}",
+    ]
 
     manifest = {
         'bundle_type': 'decision_bundle',
@@ -770,6 +794,8 @@ def build_decision_bundle_pack(
         'replay_supported_visual_review_summary.json': json.dumps(replay_supported_visual_review_summary, indent=2).encode('utf-8'),
         'surfaced_checkpoint_visual_review_summary.json': json.dumps(surfaced_checkpoint_visual_review_summary, indent=2).encode('utf-8'),
         'surfaced_multisession_visual_review_summary.json': json.dumps(surfaced_multisession_visual_review_summary, indent=2).encode('utf-8'),
+        'evidence_smoke_summary.json': json.dumps(evidence_smoke_summary, indent=2).encode('utf-8'),
+        'replay_live_fidelity_audit_summary.json': json.dumps(replay_live_fidelity_summary, indent=2).encode('utf-8'),
         'checkpoint_decision_summary.json': json.dumps(checkpoint_summary, indent=2).encode('utf-8'),
         'historical_shadow_daily_rollup.csv': shadow_pack.get('overstrictness_shadow_daily_rollup.csv', b''),
         'historical_shadow_profile_rollup.csv': shadow_pack.get('shadow_threshold_profile_rollup.csv', b''),

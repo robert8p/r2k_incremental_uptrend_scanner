@@ -24,6 +24,9 @@
                     <a class="button-link action-button" href="/scan/recent/export.zip?days=5&offsets=120,150">Last 5 sessions · 120/150 scans</a>
                     <a class="button-link action-button" href="/diagnostics/live-confirmation-pack.zip{{ token_suffix }}">Live confirmation pack</a>
                     <a class="button-link action-button" href="/diagnostics/decision-bundle.zip{{ token_suffix }}">Decision bundle</a>
+                    <a class="button-link action-button" href="/diagnostics/evidence-automation-pack.zip{{ token_suffix }}">Evidence automation pack</a>
+                    <a class="button-link action-button" href="/diagnostics/evidence-delta.txt{{ token_suffix }}">Evidence delta .txt</a>
+                    <a class="button-link action-button" href="/diagnostics/evidence-smoke.txt{{ token_suffix }}">Evidence smoke .txt</a>
                     <a class="button-link action-button" href="/diagnostics/historical-replay-shadow-pack.zip{{ token_suffix }}">Historical replay shadow pack</a>
                     <a class="button-link action-button" href="/diagnostics/replay-bottleneck-pack.zip{{ token_suffix }}">Replay bottleneck pack</a>
                     <a class="button-link action-button" href="/diagnostics/replay-checkpoint-decay-pack.zip{{ token_suffix }}">Replay checkpoint decay pack</a>
@@ -78,6 +81,34 @@
     <p class="muted small">{{ snapshot.decision_state.decision_recommendation_message }}</p>
 </section>
 {% endif %}
+{% if snapshot.evidence_automation or snapshot.evidence_delta or snapshot.evidence_smoke %}
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h2>Evidence automation</h2>
+            <p class="muted">Post-close orchestration, smoke readiness, replay-vs-live fidelity, and material-changes-only delta.</p>
+        </div>
+        <div class="action-grid action-grid--compact">
+            <a class="button-link action-button action-button--inline" href="/diagnostics/evidence-automation-pack.zip{{ token_suffix }}">Evidence automation pack</a>
+            <a class="button-link secondary-button action-button action-button--inline" href="/diagnostics/evidence-delta.txt{{ token_suffix }}">Evidence delta .txt</a>
+            <a class="button-link secondary-button action-button action-button--inline" href="/diagnostics/evidence-smoke.txt{{ token_suffix }}">Evidence smoke .txt</a>
+        </div>
+    </div>
+    <div class="stats-grid">
+        <div><span class="label">Smoke status</span><strong>{{ snapshot.evidence_smoke.overall_status if snapshot.evidence_smoke else '—' }}</strong></div>
+        <div><span class="label">Fidelity verdict</span><strong>{{ snapshot.replay_live_fidelity.verdict if snapshot.replay_live_fidelity else '—' }}</strong></div>
+        <div><span class="label">Decision code</span><strong>{{ snapshot.evidence_automation.decision_recommendation_code if snapshot.evidence_automation else '—' }}</strong></div>
+        <div><span class="label">Material changes</span><strong>{{ snapshot.evidence_delta.material_change_count if snapshot.evidence_delta else 0 }}</strong></div>
+    </div>
+    {% if snapshot.evidence_delta and snapshot.evidence_delta.changes %}
+    <ul class="goal-list">
+        {% for item in snapshot.evidence_delta.changes %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+</section>
+{% endif %}
+
+
 {% if snapshot.goal_alignment %}
 <section class="card">
     <div class="section-header">

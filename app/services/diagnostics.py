@@ -37,6 +37,12 @@ def build_diagnostics_snapshot(
 
     from app.services.decision_bundle import get_or_build_decision_state
     from app.services.goal_alignment import build_goal_alignment_summary
+    from app.services.evidence_automation import (
+        read_cached_evidence_automation_summary,
+        read_cached_evidence_delta_summary,
+        read_cached_evidence_smoke_summary,
+        read_cached_replay_live_fidelity_summary,
+    )
 
     universe_status = universe['status'].__dict__
     decision_state = get_or_build_decision_state(settings, db, alpaca)
@@ -55,6 +61,10 @@ def build_diagnostics_snapshot(
         'live_trust': build_live_trust_snapshot(settings, db),
         'decision_state': decision_state,
         'goal_alignment': build_goal_alignment_summary(settings, universe_status=universe_status, decision_state=decision_state),
+        'evidence_automation': read_cached_evidence_automation_summary(settings) or {},
+        'evidence_delta': read_cached_evidence_delta_summary(settings) or {},
+        'evidence_smoke': read_cached_evidence_smoke_summary(settings) or {},
+        'replay_live_fidelity': read_cached_replay_live_fidelity_summary(settings) or {},
     }
 
 

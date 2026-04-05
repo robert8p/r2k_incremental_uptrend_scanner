@@ -72,6 +72,19 @@ def create_app(runtime: Optional[AppRuntime] = None) -> FastAPI:
             logger.info('Background scheduler disabled by settings.')
         runtime.scheduler_status = scheduler_guard.status(scheduler_running=scheduler.running)
         try:
+            from app.services.evidence_automation import refresh_evidence_smoke_validation_cache
+            route_paths = {route.path for route in app.router.routes}
+            refresh_evidence_smoke_validation_cache(
+                runtime.settings,
+                runtime.db,
+                runtime.alpaca,
+                route_paths=route_paths,
+                scheduler_status=runtime.scheduler_status,
+                reason='startup',
+            )
+        except Exception as exc:
+            logger.exception('Evidence smoke validation failed on startup: %s', exc)
+        try:
             yield
         finally:
             if scheduler.running:
@@ -106,6 +119,7 @@ def create_app(runtime: Optional[AppRuntime] = None) -> FastAPI:
         if not current_alpaca.has_credentials():
             return
         from app.services.decision_bundle import maybe_refresh_decision_bundle_after_close
+        from app.services.evidence_automation import maybe_refresh_evidence_automation_after_close
         from app.services.live_trust import evaluate_pending_live_outcomes
         from app.services.market_time import get_session_for_day, latest_or_previous_trading_day
         from app.services.scanner import run_scan
@@ -123,6 +137,17 @@ def create_app(runtime: Optional[AppRuntime] = None) -> FastAPI:
                     logger.info('Scheduler triggering scan for %s at %s minutes.', day, offset)
                     run_scan(current_settings, runtime.db, current_alpaca, trading_day=day, offset_minutes=offset)
             maybe_refresh_decision_bundle_after_close(current_settings, runtime.db, current_alpaca, days=60, offsets=[120, 150])
+            maybe_refresh_evidence_automation_after_close(
+                current_settings,
+                runtime.db,
+                current_alpaca,
+                days=60,
+                offsets=[120, 150],
+                review_days=10,
+                lookback_days=90,
+                route_paths={route.path for route in app.router.routes},
+                scheduler_status=runtime.scheduler_status,
+            )
         except Exception as exc:
             logger.exception('Scheduled scan tick failed: %s', exc)
 

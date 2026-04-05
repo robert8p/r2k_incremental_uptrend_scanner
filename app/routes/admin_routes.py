@@ -92,6 +92,59 @@ def register_admin_routes(
         return safe_render(request, 'diagnostics.html', {'snapshot': snapshot, 'logs': logs})
 
 
+    @app.get('/diagnostics/evidence-automation-pack.zip')
+    def diagnostics_evidence_automation_pack() -> Response:
+        from app.services.evidence_automation import get_or_build_evidence_automation_zip
+        route_paths = {route.path for route in app.router.routes}
+        content = get_or_build_evidence_automation_zip(
+            runtime.settings,
+            runtime.db,
+            runtime.alpaca,
+            days=60,
+            offsets=[120, 150],
+            review_days=10,
+            lookback_days=90,
+            route_paths=route_paths,
+            scheduler_status=runtime.scheduler_status,
+            reason='on_demand',
+            prefer_cache=False,
+        )
+        return Response(
+            content=content,
+            media_type='application/zip',
+            headers={'Content-Disposition': 'attachment; filename=evidence_automation_pack_latest.zip'},
+        )
+
+    @app.get('/diagnostics/evidence-delta.txt')
+    def diagnostics_evidence_delta_snapshot() -> Response:
+        from app.services.evidence_automation import read_cached_evidence_delta_summary
+
+        return _text_attachment(
+            'evidence_delta.txt',
+            'Evidence delta summary',
+            read_cached_evidence_delta_summary(runtime.settings) or {},
+        )
+
+    @app.get('/diagnostics/evidence-smoke.txt')
+    def diagnostics_evidence_smoke_snapshot() -> Response:
+        from app.services.evidence_automation import refresh_evidence_smoke_validation_cache
+
+        route_paths = {route.path for route in app.router.routes}
+        summary = refresh_evidence_smoke_validation_cache(
+            runtime.settings,
+            runtime.db,
+            runtime.alpaca,
+            route_paths=route_paths,
+            scheduler_status=runtime.scheduler_status,
+            reason='on_demand',
+        )
+        return _text_attachment(
+            'evidence_smoke.txt',
+            'Evidence smoke validation',
+            summary,
+        )
+
+
     @app.get('/diagnostics/config-snapshot.txt')
     def diagnostics_config_snapshot() -> Response:
         return _text_attachment(
