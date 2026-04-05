@@ -52,18 +52,20 @@ def build_goal_alignment_summary(
     worst_replay_offset_minutes = int(worst_replay_offset.get('scan_offset_minutes') or 0)
     best_replay_offset_share = best_replay_offset.get('tradeable_share')
     worst_replay_offset_share = worst_replay_offset.get('tradeable_share')
-    checkpoint_specific_replay_support = recommendation == 'historical_replay_supports_checkpoint_specific_candidate_hold_live_gate'
-    checkpoint_gate_shadow_test = recommendation == 'historical_replay_supports_weaker_checkpoint_gate_shadow_test_hold_live_gate'
     replay_gate = dict(replay_compatibility.get('best_gate_weaker_offset_only') or {}) or dict(replay_compatibility.get('best_gate_weaker_offset_total') or {})
     replay_gate_metric = replay_gate.get('metric_name')
     replay_gate_comparator = replay_gate.get('comparator')
     replay_gate_threshold = replay_gate.get('threshold_value')
     replay_gate_share = replay_gate.get('tradeable_share')
+    checkpoint_specific_replay_support = recommendation == 'historical_replay_supports_checkpoint_specific_candidate_hold_live_gate'
+    checkpoint_gate_shadow_test = recommendation == 'historical_replay_supports_weaker_checkpoint_gate_shadow_test_hold_live_gate'
+
     shadow_visual_review = dict(decision.get('shadow_visual_review') or {})
     visual_summary = dict(shadow_visual_review.get('summary') or {})
     visual_verdict_counts = dict(visual_summary.get('visual_review_verdict_counts') or {})
     visual_selected_count = int(shadow_visual_review.get('selected_review_count') or visual_summary.get('selected_review_count') or 0)
     visual_all_trend_biased = bool(shadow_visual_review.get('all_tradeable_but_trend_biased'))
+
     replay_supported_visual_review = dict(decision.get('replay_supported_visual_review') or {})
     replay_visual_summary = dict(replay_supported_visual_review.get('summary') or {})
     replay_visual_verdict_counts = dict(replay_visual_summary.get('visual_review_verdict_counts') or {})
@@ -73,12 +75,33 @@ def build_goal_alignment_summary(
     replay_visual_focus_profile = str(replay_supported_visual_review.get('focus_profile_name') or replay_visual_summary.get('focus_profile_name') or '') or None
     replay_visual_focus_offset = int(replay_supported_visual_review.get('focus_offset_minutes') or replay_visual_summary.get('focus_offset_minutes') or 0)
 
+    surfaced_visual = dict(decision.get('surfaced_checkpoint_visual_review') or {})
+    surfaced_visual_summary = dict(surfaced_visual.get('summary') or {})
+    surfaced_visual_verdict_counts = dict(surfaced_visual_summary.get('visual_review_verdict_counts') or {})
+    surfaced_visual_selected_count = int(surfaced_visual.get('selected_review_count') or surfaced_visual_summary.get('selected_review_count') or 0)
+    surfaced_visual_supports_range = bool(surfaced_visual.get('supports_range_cycling_thesis'))
+    surfaced_visual_focus_offset = int(surfaced_visual.get('focus_offset_minutes') or surfaced_visual_summary.get('focus_offset_minutes') or 0)
+
+    surfaced_multisession_visual = dict(decision.get('surfaced_multisession_visual_review') or {})
+    surfaced_multisession_summary = dict(surfaced_multisession_visual.get('summary') or {})
+    surfaced_multisession_verdict_counts = dict(surfaced_multisession_summary.get('visual_review_verdict_counts') or {})
+    surfaced_multisession_selected_count = int(surfaced_multisession_visual.get('selected_review_count') or surfaced_multisession_summary.get('selected_review_count') or 0)
+    surfaced_multisession_supports_range = bool(surfaced_multisession_visual.get('supports_range_cycling_thesis'))
+    surfaced_multisession_all_non_supportive = bool(surfaced_multisession_visual.get('all_rows_non_supportive'))
+    surfaced_multisession_focus_offset = int(surfaced_multisession_visual.get('focus_offset_minutes') or surfaced_multisession_summary.get('focus_offset_minutes') or 0)
+
     operating_posture = (
         f"Production, {settings.trading_mode}, live trading {'enabled' if settings.enable_live_trading else 'disabled'}, "
         f"{settings.alpaca_data_feed.upper()} data, scheduled checkpoints {', '.join(str(x) for x in settings.scheduled_offsets)} minutes."
     )
 
-    if replay_visual_all_trend_biased and replay_visual_selected_count > 0:
+    if surfaced_multisession_all_non_supportive and surfaced_multisession_selected_count > 0:
+        pressure_point = (
+            'Actual surfaced stage-2 names across recent sessions are still failing thesis validation: '
+            f'all {surfaced_multisession_selected_count} reviewed surfaced rows at the best checkpoint were either trend-biased or not actionable from the preferred entry zone. '
+            'Do not treat the current surfaced path as product-valid yet.'
+        )
+    elif replay_visual_all_trend_biased and replay_visual_selected_count > 0:
         pressure_point = (
             'The surviving replay-supported path now looks thesis-misaligned in recent live-shaped charts: '
             f'all {replay_visual_selected_count} reviewed {replay_visual_focus_profile or "replay-supported"} rows at {replay_visual_focus_offset} minutes were trend-biased rather than clean range-cycling setups. '
@@ -122,24 +145,29 @@ def build_goal_alignment_summary(
     ]
 
     if replay_available:
+        suffix = 's' if replay_trading_days != 1 else ''
         what_matters_now.append(
-            f'Use historical replay under the current clean logic as the primary evidence engine; cached replay currently covers {replay_trading_days} trading day{'s' if replay_trading_days != 1 else ''} and points most strongly at {replay_profile or "no clear profile yet"}.'
+            f'Use historical replay under the current clean logic as the primary evidence engine; cached replay currently covers {replay_trading_days} trading day{suffix} and points most strongly at {replay_profile or "no clear profile yet"}.'
         )
-        if (checkpoint_specific_replay_support or checkpoint_gate_shadow_test) and replay_profile and best_replay_offset_minutes > 0:
+        if best_replay_offset_minutes > 0:
             what_matters_now.append(
-                f'Replay now supports {replay_profile} specifically at the {best_replay_offset_minutes}-minute checkpoint ({best_replay_offset_share}), while the weaker checkpoint remains below support. Treat that as a narrow checkpoint-specific signal, not as permission for a live threshold change.'
+                f'Replay currently supports {replay_profile or "the leading profile"} most strongly at the {best_replay_offset_minutes}-minute checkpoint ({best_replay_offset_share}), while the weaker checkpoint remains below support ({worst_replay_offset_minutes}m at {worst_replay_offset_share}).'
             )
-        if (checkpoint_specific_replay_support or checkpoint_gate_shadow_test) and worst_replay_offset_minutes > 0:
+        if surfaced_multisession_supports_range and surfaced_multisession_selected_count > 0:
             what_matters_now.append(
-                f'Prioritize bottleneck work on why the {worst_replay_offset_minutes}-minute checkpoint decays, especially entry-touched-no-target misses, before changing stage-2 or live-gate behavior.'
+                'Actual surfaced stage-2 names now include visually supportive range-cycling examples at the best checkpoint. Treat that as stronger product-truth on the surfaced path while keeping live behavior frozen.'
+            )
+        if surfaced_multisession_all_non_supportive and surfaced_multisession_selected_count > 0:
+            what_matters_now.append(
+                'Actual surfaced stage-2 names across recent sessions are still either trend-biased or not actionable from the preferred entry zone. Any next change should narrow upstream selection rather than loosen live behavior.'
             )
         if replay_visual_supports_range and replay_visual_selected_count > 0:
             what_matters_now.append(
-                f'Automated visual review now supports the replay-backed {replay_visual_focus_profile or replay_profile or "profile"} path at {replay_visual_focus_offset} minutes on recent live-shaped rows. Treat that as the surviving thesis-valid branch while keeping live behavior frozen.'
+                f'Automated visual review supports the replay-backed {replay_visual_focus_profile or replay_profile or "profile"} path at {replay_visual_focus_offset} minutes on recent live-shaped rows. Treat that as advisory only while live behavior stays frozen.'
             )
         if replay_visual_all_trend_biased and replay_visual_selected_count > 0:
             what_matters_now.append(
-                f'Automated visual review now flags the replay-backed {replay_visual_focus_profile or replay_profile or "profile"} path at {replay_visual_focus_offset} minutes as trend-biased on all {replay_visual_selected_count} reviewed rows. Do not treat replay support for that branch as product-valid yet.'
+                f'Automated visual review flags the replay-backed {replay_visual_focus_profile or replay_profile or "profile"} path at {replay_visual_focus_offset} minutes as trend-biased on all reviewed rows. Do not treat replay support for that branch as product-valid yet.'
             )
         if checkpoint_gate_shadow_test and replay_gate_metric:
             what_matters_now.append(
@@ -158,12 +186,17 @@ def build_goal_alignment_summary(
             f'Best current shadow profile is {best_shadow_profile}; treat it as a candidate for later trial only after the promotion gate opens.'
         )
     if clean_day_count < 5:
+        suffix = 's' if clean_day_count != 1 else ''
         what_matters_now.append(
-            f'Evidence density is still thin ({clean_day_count} clean day{'s' if clean_day_count != 1 else ''}); accumulation matters more than tuning right now.'
+            f'Evidence density is still thin ({clean_day_count} clean day{suffix}); accumulation matters more than tuning right now.'
         )
     if visual_all_trend_biased and visual_selected_count > 0:
         what_matters_now.append(
-            f'Automated visual review currently shows all {visual_selected_count} reviewed rescues were tradeable but trend-biased, not clean range-cycling setups. Keep live thresholds frozen and do not count that evidence as thesis-valid support for classifier softening.'
+            f'Automated visual review currently shows all {visual_selected_count} reviewed rescues were tradeable but trend-biased, not clean range-cycling setups. Keep live thresholds frozen and do not count that as thesis-valid support for classifier softening.'
+        )
+    if surfaced_visual_selected_count > 0 and not surfaced_visual_supports_range:
+        what_matters_now.append(
+            f'Actual surfaced names at the latest best checkpoint ({surfaced_visual_focus_offset}m) were not clearly thesis-valid on the latest reviewed day. Use the multi-session surfaced review to decide whether that was noise or the real product truth.'
         )
 
     frozen_now = [
@@ -181,7 +214,11 @@ def build_goal_alignment_summary(
         'The automated evidence begins pointing at a different bottleneck than the current strict structural classifier story.',
     ]
 
-    if replay_visual_all_trend_biased and replay_visual_selected_count > 0:
+    if surfaced_multisession_all_non_supportive and surfaced_multisession_selected_count > 0:
+        overall_assessment = (
+            'The app is still not successful yet because the actual surfaced stage-2 names across recent sessions are not yielding clean range-cycling setups at the best checkpoint. Keep live behavior frozen and stop treating rescue-path evidence as the main question.'
+        )
+    elif replay_visual_all_trend_biased and replay_visual_selected_count > 0:
         overall_assessment = (
             'The app is still not successful yet because the only surviving replay-supported branch now looks trend-biased rather than thesis-valid on recent live-shaped charts. Keep live behavior frozen and do not treat replay support by itself as product success.'
         )
@@ -201,18 +238,9 @@ def build_goal_alignment_summary(
         overall_assessment = (
             'The app now has a replay-backed candidate profile under the current clean logic. Live behavior should still stay frozen until the release gate opens on clean live evidence.'
         )
-    elif checkpoint_gate_shadow_test:
-        overall_assessment = (
-            'The app is closer to the true objective because replay now isolates a checkpoint-specific candidate and a weaker-checkpoint scan-time gate candidate for shadow testing. The evidence still supports holding live behavior steady; the next change should test the weaker-checkpoint gate in shadow, not change live thresholds.'
-        )
-    elif checkpoint_specific_replay_support:
-        overall_assessment = (
-            'The app is closer to the true objective because replay now isolates a checkpoint-specific candidate, but the evidence still supports holding live behavior steady. The next change should target checkpoint-specific decay, not broad threshold loosening.'
-        )
     elif readiness == 'shadow_profile_promising_but_early':
         overall_assessment = (
-            'The app looks coherent for the current evidence-first phase. The most likely future change area is structural-classifier softness, '
-            'but the current evidence is still too thin for a live calibration change.'
+            'The app looks coherent for the current evidence-first phase. The most likely future change area is structural-classifier softness, but the current evidence is still too thin for a live calibration change.'
         )
     elif readiness == 'insufficient_runtime_context':
         overall_assessment = (
@@ -257,16 +285,22 @@ def build_goal_alignment_summary(
         'replay_supported_visual_review_verdict_counts': replay_visual_verdict_counts,
         'replay_supported_visual_review_supports_range_cycling_thesis': replay_visual_supports_range,
         'replay_supported_visual_review_all_tradeable_but_trend_biased': replay_visual_all_trend_biased,
+        'surfaced_checkpoint_visual_review_selected_count': surfaced_visual_selected_count,
+        'surfaced_checkpoint_visual_review_verdict_counts': surfaced_visual_verdict_counts,
+        'surfaced_checkpoint_visual_review_supports_range_cycling_thesis': surfaced_visual_supports_range,
+        'surfaced_multisession_visual_review_selected_count': surfaced_multisession_selected_count,
+        'surfaced_multisession_visual_review_verdict_counts': surfaced_multisession_verdict_counts,
+        'surfaced_multisession_visual_review_supports_range_cycling_thesis': surfaced_multisession_supports_range,
+        'surfaced_multisession_visual_review_all_rows_non_supportive': surfaced_multisession_all_non_supportive,
     }
 
 
 def build_goal_alignment_text(summary: dict[str, Any]) -> str:
-    lines = [
+    sections = [
         'Goal alignment readout',
-        f"Generated at UTC: {summary.get('generated_at_utc')}",
         '',
-        'Objective',
-        summary.get('objective_summary') or '',
+        f"Generated at: {summary.get('generated_at_utc')}",
+        f"Objective: {summary.get('objective_summary')}",
         '',
         'Operating posture',
         summary.get('operating_posture') or '',
@@ -279,32 +313,32 @@ def build_goal_alignment_text(summary: dict[str, Any]) -> str:
         '',
         'What matters now',
     ]
-    lines.extend(f'- {item}' for item in summary.get('what_matters_now') or [])
-    lines.extend(['', 'What is frozen'])
-    lines.extend(f'- {item}' for item in summary.get('what_is_frozen') or [])
-    lines.extend(['', 'What would justify change'])
-    lines.extend(f'- {item}' for item in summary.get('what_would_justify_change') or [])
-    lines.extend(['', 'Machine state', json.dumps({
-        'latest_selected_day': summary.get('latest_selected_day'),
-        'clean_day_count': summary.get('clean_day_count'),
-        'best_shadow_profile': summary.get('best_shadow_profile'),
-        'overall_promotion_readiness': summary.get('overall_promotion_readiness'),
-        'decision_recommendation_code': summary.get('decision_recommendation_code'),
-        'tradable_universe_count': summary.get('tradable_universe_count'),
-        'historical_replay_available': summary.get('historical_replay_available'),
-        'historical_replay_best_profile': summary.get('historical_replay_best_profile'),
-        'historical_replay_overall_verdict': summary.get('historical_replay_overall_verdict'),
-        'historical_replay_trading_day_count': summary.get('historical_replay_trading_day_count'),
-        'historical_replay_best_supported_offset_minutes': summary.get('historical_replay_best_supported_offset_minutes'),
-        'historical_replay_best_supported_offset_share': summary.get('historical_replay_best_supported_offset_share'),
-        'historical_replay_worst_offset_minutes': summary.get('historical_replay_worst_offset_minutes'),
-        'historical_replay_worst_offset_share': summary.get('historical_replay_worst_offset_share'),
-        'historical_replay_weaker_checkpoint_gate_metric': summary.get('historical_replay_weaker_checkpoint_gate_metric'),
-        'historical_replay_weaker_checkpoint_gate_comparator': summary.get('historical_replay_weaker_checkpoint_gate_comparator'),
-        'historical_replay_weaker_checkpoint_gate_threshold': summary.get('historical_replay_weaker_checkpoint_gate_threshold'),
-        'historical_replay_weaker_checkpoint_gate_share': summary.get('historical_replay_weaker_checkpoint_gate_share'),
-        'shadow_visual_review_selected_count': summary.get('shadow_visual_review_selected_count'),
-        'shadow_visual_review_verdict_counts': summary.get('shadow_visual_review_verdict_counts'),
-        'shadow_visual_review_all_tradeable_but_trend_biased': summary.get('shadow_visual_review_all_tradeable_but_trend_biased'),
-    }, indent=2)])
-    return '\n'.join(lines).strip() + '\n'
+    for item in summary.get('what_matters_now') or []:
+        sections.append(f'- {item}')
+    sections.extend(['', 'What is frozen'])
+    for item in summary.get('what_is_frozen') or []:
+        sections.append(f'- {item}')
+    sections.extend(['', 'What would justify change'])
+    for item in summary.get('what_would_justify_change') or []:
+        sections.append(f'- {item}')
+    sections.extend(['', 'Machine state snapshot'])
+    for key in [
+        'latest_selected_day', 'clean_day_count', 'best_shadow_profile', 'overall_promotion_readiness',
+        'decision_recommendation_code', 'tradable_universe_count', 'historical_replay_available',
+        'historical_replay_best_profile', 'historical_replay_overall_verdict', 'historical_replay_trading_day_count',
+        'historical_replay_best_supported_offset_minutes', 'historical_replay_best_supported_offset_share',
+        'historical_replay_worst_offset_minutes', 'historical_replay_worst_offset_share',
+        'historical_replay_weaker_checkpoint_gate_metric', 'historical_replay_weaker_checkpoint_gate_comparator',
+        'historical_replay_weaker_checkpoint_gate_threshold', 'historical_replay_weaker_checkpoint_gate_share',
+        'shadow_visual_review_all_tradeable_but_trend_biased'
+    ]:
+        if key in summary:
+            sections.append(f'- {key}: {summary.get(key)}')
+    return '\n'.join(sections) + '\n'
+
+
+def write_goal_alignment_snapshot(path: str, summary: dict[str, Any]) -> None:
+    with open(path, 'w', encoding='utf-8') as fh:
+        fh.write(build_goal_alignment_text(summary))
+        fh.write('\n')
+        fh.write(json.dumps(summary, indent=2))
