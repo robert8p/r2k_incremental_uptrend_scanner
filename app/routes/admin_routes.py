@@ -115,6 +115,20 @@ def register_admin_routes(
             headers={'Content-Disposition': 'attachment; filename=evidence_automation_pack_latest.zip'},
         )
 
+    @app.get('/diagnostics/five-session-evidence-review-pack.zip')
+    def diagnostics_five_session_evidence_review_pack() -> Response:
+        from app.services.evidence_automation import get_or_build_five_session_evidence_review_zip
+        content = get_or_build_five_session_evidence_review_zip(
+            runtime.settings,
+            session_count=5,
+            prefer_cache=False,
+        )
+        return Response(
+            content=content,
+            media_type='application/zip',
+            headers={'Content-Disposition': 'attachment; filename=five_session_evidence_review_latest.zip'},
+        )
+
     @app.get('/diagnostics/evidence-delta.txt')
     def diagnostics_evidence_delta_snapshot() -> Response:
         from app.services.evidence_automation import read_cached_evidence_delta_summary

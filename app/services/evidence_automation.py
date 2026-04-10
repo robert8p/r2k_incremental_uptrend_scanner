@@ -23,7 +23,11 @@ _CACHE_SUMMARY_NAME = 'evidence_automation_latest.json'
 _DELTA_SUMMARY_NAME = 'evidence_delta_latest.json'
 _SMOKE_SUMMARY_NAME = 'evidence_smoke_latest.json'
 _FIDELITY_SUMMARY_NAME = 'replay_live_fidelity_latest.json'
+_FIVE_SESSION_ZIP_NAME = 'five_session_evidence_review_latest.zip'
+_FIVE_SESSION_SUMMARY_NAME = 'five_session_evidence_review_latest.json'
 _ARTIFACTS_DIR_NAME = 'artifacts'
+_HISTORY_DIR_NAME = 'history'
+_HISTORY_KEEP_COUNT = 10
 
 
 REQUIRED_DIAGNOSTIC_ROUTES = [
@@ -34,6 +38,7 @@ REQUIRED_DIAGNOSTIC_ROUTES = [
     '/diagnostics/surfaced-checkpoint-visual-review-pack.zip',
     '/diagnostics/surfaced-multisession-visual-review-pack.zip',
     '/diagnostics/evidence-automation-pack.zip',
+    '/diagnostics/five-session-evidence-review-pack.zip',
 ]
 
 
@@ -45,6 +50,8 @@ ARTIFACT_FILENAMES = {
     'surfaced_checkpoint_visual_review_pack': 'surfaced_checkpoint_visual_review_pack_latest.zip',
     'surfaced_multisession_visual_review_pack': 'surfaced_multisession_visual_review_pack_latest.zip',
 }
+
+WEEKLY_REVIEW_PACK_NAME = 'five_session_evidence_review_latest.zip'
 
 
 KEY_DELTA_FIELDS = (
@@ -117,6 +124,65 @@ def _smoke_summary_path(settings: Settings) -> Path:
 
 def _fidelity_summary_path(settings: Settings) -> Path:
     return _cache_dir(settings) / _FIDELITY_SUMMARY_NAME
+
+
+def _five_session_zip_path(settings: Settings) -> Path:
+    return _cache_dir(settings) / _FIVE_SESSION_ZIP_NAME
+
+
+def _five_session_summary_path(settings: Settings) -> Path:
+    return _cache_dir(settings) / _FIVE_SESSION_SUMMARY_NAME
+
+
+def _history_dir(settings: Settings) -> Path:
+    path = _cache_dir(settings) / _HISTORY_DIR_NAME
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _history_session_dir(settings: Settings, session_key: str) -> Path:
+    key = str(session_key or '').strip() or 'unknown_session'
+    path = _history_dir(settings) / key
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _history_session_summary_path(settings: Settings, session_key: str) -> Path:
+    return _history_session_dir(settings, session_key) / 'session_summary.json'
+
+
+def _list_history_session_keys(settings: Settings) -> list[str]:
+    root = _history_dir(settings)
+    keys = [path.name for path in root.iterdir() if path.is_dir()]
+    return sorted(keys)
+
+
+def read_cached_five_session_evidence_review_summary(settings: Settings) -> dict[str, Any] | None:
+    return _read_json_path(_five_session_summary_path(settings))
+
+
+def read_cached_five_session_evidence_review_zip(settings: Settings) -> bytes | None:
+    path = _five_session_zip_path(settings)
+    if not path.exists():
+        return None
+    try:
+        return path.read_bytes()
+    except Exception:
+        return None
+
+
+def _prune_history(settings: Settings, keep_count: int = _HISTORY_KEEP_COUNT) -> None:
+    keys = _list_history_session_keys(settings)
+    if len(keys) <= keep_count:
+        return
+    for key in keys[:-keep_count]:
+        path = _history_dir(settings) / key
+        for child in sorted(path.rglob('*'), reverse=True):
+            if child.is_file():
+                child.unlink(missing_ok=True)
+            elif child.is_dir():
+                child.rmdir()
+        path.rmdir()
 
 
 
@@ -194,6 +260,146 @@ def _store_artifact(settings: Settings, artifact_key: str, pack: dict[str, bytes
         'path': str(path),
         'size_bytes': len(zip_bytes),
     }
+
+
+def _build_history_session_summary(
+    current_summary: dict[str, Any],
+    delta_summary: dict[str, Any],
+    smoke_summary: dict[str, Any],
+    fidelity_summary: dict[str, Any],
+    decision_state: dict[str, Any],
+) -> dict[str, Any]:
+    checkpoint = dict(decision_state.get('checkpoint_summary') or {})
+    surfaced_summary = dict((decision_state.get('surfaced_multisession_visual_review') or {}).get('summary') or {})
+    return {
+        'generated_at_utc': datetime.now(UTC).isoformat(),
+        'app_version': VERSION,
+        'session_key': str(current_summary.get('latest_selected_day') or ''),
+        'latest_selected_day': current_summary.get('latest_selected_day'),
+        'decision_recommendation_code': current_summary.get('decision_recommendation_code'),
+        'clean_day_count': current_summary.get('clean_day_count'),
+        'currently_valid_now_count': current_summary.get('currently_valid_now_count'),
+        'max_stage2_count_any_checkpoint': current_summary.get('max_stage2_count_any_checkpoint'),
+        'best_checkpoint_offset_minutes': checkpoint.get('best_checkpoint_offset_minutes'),
+        'replay_supported_profile_name': current_summary.get('replay_supported_profile_name'),
+        'replay_live_fidelity_verdict': fidelity_summary.get('verdict'),
+        'smoke_overall_status': smoke_summary.get('overall_status'),
+        'material_change_count': delta_summary.get('material_change_count'),
+        'surfaced_multisession_selected_review_count': surfaced_summary.get('selected_review_count'),
+        'surfaced_multisession_visual_review_verdict_counts': dict(surfaced_summary.get('visual_review_verdict_counts') or {}),
+    }
+
+
+def _store_history_snapshot(
+    settings: Settings,
+    *,
+    current_summary: dict[str, Any],
+    delta_summary: dict[str, Any],
+    smoke_summary: dict[str, Any],
+    fidelity_summary: dict[str, Any],
+    decision_state: dict[str, Any],
+    evidence_pack_zip: bytes,
+    decision_bundle_zip: bytes | None,
+) -> dict[str, Any] | None:
+    session_key = str(current_summary.get('latest_selected_day') or '').strip()
+    if not session_key:
+        return None
+    session_dir = _history_session_dir(settings, session_key)
+    session_summary = _build_history_session_summary(current_summary, delta_summary, smoke_summary, fidelity_summary, decision_state)
+    _write_json(session_dir / 'session_summary.json', session_summary)
+    _write_json(session_dir / 'evidence_delta_summary.json', delta_summary)
+    _write_json(session_dir / 'evidence_smoke_summary.json', smoke_summary)
+    _write_json(session_dir / 'replay_live_fidelity_audit_summary.json', fidelity_summary)
+    (session_dir / 'evidence_automation_pack_latest.zip').write_bytes(evidence_pack_zip)
+    if decision_bundle_zip:
+        (session_dir / 'decision_bundle_latest.zip').write_bytes(decision_bundle_zip)
+    _prune_history(settings)
+    return session_summary
+
+
+def _read_history_session_summary(settings: Settings, session_key: str) -> dict[str, Any] | None:
+    return _read_json_path(_history_session_summary_path(settings, session_key))
+
+
+def build_five_session_evidence_review_pack(
+    settings: Settings,
+    *,
+    session_count: int = 5,
+) -> dict[str, bytes]:
+    keys = _list_history_session_keys(settings)[-max(int(session_count), 1):]
+    keys = list(reversed(keys))
+    session_summaries: list[dict[str, Any]] = []
+    report_lines = [
+        '# Five-session evidence review pack',
+        '',
+        f'Generated at: {datetime.now(UTC).isoformat()}',
+        f'App version: {VERSION}',
+        f'Sessions included: {len(keys)}',
+        '',
+        '## Session rollup',
+    ]
+    pack: dict[str, bytes] = {}
+    for key in keys:
+        session_dir = _history_session_dir(settings, key)
+        summary = _read_history_session_summary(settings, key) or {}
+        session_summaries.append(summary)
+        report_lines.append(
+            f"- {key}: recommendation={summary.get('decision_recommendation_code')}, clean_day_count={summary.get('clean_day_count')}, currently_valid_now_count={summary.get('currently_valid_now_count')}, best_checkpoint_offset_minutes={summary.get('best_checkpoint_offset_minutes')}, fidelity={summary.get('replay_live_fidelity_verdict')}"
+        )
+        for filename in ('session_summary.json', 'evidence_delta_summary.json', 'evidence_smoke_summary.json', 'replay_live_fidelity_audit_summary.json', 'evidence_automation_pack_latest.zip', 'decision_bundle_latest.zip'):
+            path = session_dir / filename
+            if path.exists():
+                pack[f'sessions/{key}/{filename}'] = path.read_bytes()
+
+    aggregate = {
+        'generated_at_utc': datetime.now(UTC).isoformat(),
+        'app_version': VERSION,
+        'bundle_type': 'five_session_evidence_review_pack',
+        'session_count_requested': int(session_count),
+        'session_count_included': len(keys),
+        'session_keys': keys,
+        'latest_session_key': keys[0] if keys else None,
+        'earliest_session_key': keys[-1] if keys else None,
+        'sessions': session_summaries,
+    }
+    changes = [s for s in session_summaries if _to_int(s.get('material_change_count')) > 0]
+    aggregate['sessions_with_material_changes'] = len(changes)
+    report_lines.extend(['', '## Material-change sessions'])
+    if changes:
+        report_lines.extend([f"- {s.get('session_key')}: {s.get('material_change_count')} material changes" for s in changes])
+    else:
+        report_lines.append('- None in the included window.')
+    pack.update({
+        'MANIFEST.json': json.dumps({
+            'bundle_type': 'five_session_evidence_review_pack',
+            'bundle_contract_version': '1.0',
+            'app_version': VERSION,
+            'generated_at_utc': aggregate['generated_at_utc'],
+            'session_count_included': len(keys),
+            'session_keys': keys,
+        }, indent=2).encode('utf-8'),
+        'five_session_evidence_review_summary.json': json.dumps(aggregate, indent=2).encode('utf-8'),
+        'report.md': '\n'.join(report_lines).encode('utf-8'),
+    })
+    return pack
+
+
+def get_or_build_five_session_evidence_review_zip(
+    settings: Settings,
+    *,
+    session_count: int = 5,
+    prefer_cache: bool = False,
+) -> bytes:
+    cached = read_cached_five_session_evidence_review_zip(settings) if prefer_cache else None
+    if cached:
+        return cached
+    pack = build_five_session_evidence_review_pack(settings, session_count=session_count)
+    zip_bytes = _safe_pack_to_zip(pack)
+    _five_session_zip_path(settings).write_bytes(zip_bytes)
+    summary = _read_json_bytes(pack.get('five_session_evidence_review_summary.json', b''))
+    if summary:
+        _write_json(_five_session_summary_path(settings), summary)
+    return zip_bytes
 
 
 
@@ -442,13 +648,14 @@ def write_evidence_automation_cache(
     delta: dict[str, Any],
     smoke_summary: dict[str, Any],
     fidelity_summary: dict[str, Any],
-) -> dict[str, Any]:
-    _cache_zip_path(settings).write_bytes(_safe_pack_to_zip(pack))
+) -> tuple[dict[str, Any], bytes]:
+    zip_bytes = _safe_pack_to_zip(pack)
+    _cache_zip_path(settings).write_bytes(zip_bytes)
     _write_json(_cache_summary_path(settings), summary)
     _write_json(_delta_summary_path(settings), delta)
     _write_json(_smoke_summary_path(settings), smoke_summary)
     _write_json(_fidelity_summary_path(settings), fidelity_summary)
-    return summary
+    return summary, zip_bytes
 
 
 
@@ -663,7 +870,18 @@ def build_evidence_automation_pack(
         'summaries/surfaced_checkpoint_visual_review_summary.json': json.dumps(summaries['surfaced_checkpoint_visual_review_pack'], indent=2).encode('utf-8'),
         'summaries/surfaced_multisession_visual_review_summary.json': json.dumps(summaries['surfaced_multisession_visual_review_pack'], indent=2).encode('utf-8'),
     })
-    write_evidence_automation_cache(settings, pack, current_summary, delta_summary, smoke_summary, fidelity_summary)
+    _, evidence_zip = write_evidence_automation_cache(settings, pack, current_summary, delta_summary, smoke_summary, fidelity_summary)
+    _store_history_snapshot(
+        settings,
+        current_summary=current_summary,
+        delta_summary=delta_summary,
+        smoke_summary=smoke_summary,
+        fidelity_summary=fidelity_summary,
+        decision_state=decision_state,
+        evidence_pack_zip=evidence_zip,
+        decision_bundle_zip=cached_decision_bundle,
+    )
+    get_or_build_five_session_evidence_review_zip(settings, session_count=5, prefer_cache=False)
     return pack
 
 
